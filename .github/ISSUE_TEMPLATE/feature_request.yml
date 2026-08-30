@@ -1,0 +1,42 @@
+name: Feature request
+description: Propose an improvement to ClusterGlyph
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: Describe the problem first, then the proposed behavior.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What workflow is difficult or impossible today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Explain the behavior you would like to see.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Color clustering
+        - Contour tracing
+        - Geometry recovery
+        - Polygon editing
+        - SVG export
+        - Performance
+        - User interface
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or implementation ideas
+      description: Optional algorithm, UX, or architectural suggestions.

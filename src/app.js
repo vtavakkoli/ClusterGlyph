@@ -1,4 +1,5 @@
-import { serializeObjectsToSvg } from './vectorizer.js';
+import { serializeObjectsToSvg } from './serializer.js';
+import { recognizeText, createTextObjects, maskDetectedText } from './ocr.js';
 
 const $ = (s) => document.querySelector(s);
 const drop = $('#drop');
@@ -64,6 +65,12 @@ function humanBytes(bytes) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, char => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[char]);
+}
+
 function setProgress(value, text) {
   progress.value = Math.round(value * 100);
   progressText.textContent = text;
@@ -122,6 +129,7 @@ function options() {
 }
 
 function objectPointCount(object) {
+  if (object.type === 'text') return 0;
   if (object.type !== 'polygon') return 1;
   return (object.rings || []).reduce((sum, ring) => sum + ring.length, 0);
 }
@@ -131,12 +139,18 @@ function updateExportSvg() {
   const bytes = new TextEncoder().encode(currentSVG).length;
   const svgSize = $('#svgSizeValue');
   if (svgSize) svgSize.textContent = humanBytes(bytes);
+  return bytes;
+}
+
+function objectLabel(object, index) {
+  if (object.type === 'text') return `${index + 1}. ${object.id} · text · “${object.text}”`;
+  return `${index + 1}. ${object.id} · ${object.type} · cluster ${object.cluster + 1}`;
 }
 
 function renderObjectOptions() {
   const previous = selectedObjectId;
   objectSelect.innerHTML = currentObjects.length
-    ? currentObjects.map((o, i) => `<option value="${o.id}">${i + 1}. ${o.id} · ${o.type} · cluster ${o.cluster + 1}</option>`).join('')
+    ? currentObjects.map((o, i) => `<option value="${escapeHtml(o.id)}">${escapeHtml(objectLabel(o, i))}</option>`).join('')
     : '<option value="">No objects</option>';
   if (previous && currentObjects.some(o => o.id === previous)) objectSelect.value = previous;
 }
@@ -147,9 +161,9 @@ function renderEditor() {
   editorFields.hidden = !object;
   if (!object) return;
   objectIdEl.textContent = object.id;
-  objectTypeEl.textContent = object.type;
-  objectPointsEl.textContent = String(objectPointCount(object));
-  objectClusterEl.textContent = String(object.cluster + 1);
+  objectTypeEl.textContent = object.type === 'text' ? `text · ${Math.round(object.confidence || 0)}% OCR` : object.type;
+  objectPointsEl.textContent = object.type === 'text' ? `${Number(object.fontSize || 0).toFixed(1)}px` : String(objectPointCount(object));
+  objectClusterEl.textContent = object.type === 'text' ? object.fontFamily || 'OCR' : String(object.cluster + 1);
   objectFill.value = object.fill;
 }
 
@@ -246,11 +260,11 @@ function startVertexDrag(event) {
   handle.addEventListener('pointercancel', up);
 }
 
-function renderResult(result) {
+function renderResult(result, textObjects = [], ocrWarning = '') {
   currentVectorSize = { width: result.width, height: result.height };
   currentPrecision = result.precision;
-  currentObjects = deepCopy(result.objects);
-  originalObjects = deepCopy(result.objects);
+  currentObjects = deepCopy([...result.objects, ...textObjects]);
+  originalObjects = deepCopy(currentObjects);
   selectedObjectId = currentObjects[0]?.id || null;
   renderPreview();
   downloadBtn.disabled = false;
@@ -258,13 +272,14 @@ function renderResult(result) {
   resetEditsBtn.disabled = false;
   paletteEl.innerHTML = result.palette.map((p, i) => `<button class="swatch" data-cluster="${i}" title="Cluster ${i + 1}: ${p.color}" style="--swatch:${p.color}"></button>`).join('');
   const s = result.stats;
+  const outputBytes = new TextEncoder().encode(currentSVG).length;
   const items = [
-    ['Clusters', `${s.clusters}/${s.requestedClusters}`], ['Objects', s.shapes], ['Polygons', s.polygons], ['Circles', s.circles], ['Ellipses', s.ellipses],
+    ['Clusters', `${s.clusters}/${s.requestedClusters}`], ['Objects', currentObjects.length], ['Text', textObjects.length], ['Polygons', s.polygons], ['Circles', s.circles], ['Ellipses', s.ellipses],
     ['Points', `${s.pointsBefore.toLocaleString()} → ${s.pointsAfter.toLocaleString()}`],
-    ['Reduction', `${Math.max(0, s.reduction * 100).toFixed(1)}%`], ['SVG size', humanBytes(s.svgBytes), 'svgSizeValue']
+    ['Reduction', `${Math.max(0, s.reduction * 100).toFixed(1)}%`], ['SVG size', humanBytes(outputBytes), 'svgSizeValue']
   ];
   statsEl.innerHTML = items.map(([k, v, id]) => `<div class="stat"><span>${k}</span><strong${id ? ` id="${id}"` : ''}>${v}</strong></div>`).join('');
-  status.textContent = 'Vectorization complete — select a shape to edit';
+  status.textContent = ocrWarning ? `Vectorization complete · ${ocrWarning}` : 'Vectorization complete — shapes and text are editable';
 }
 
 async function vectorize() {
@@ -278,14 +293,42 @@ async function vectorize() {
   await loadFile(currentFile);
   runBtn.disabled = true;
   const ctx = sourceCanvas.getContext('2d', { willReadFrequently: true });
-  const img = ctx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
+  const originalImage = ctx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
+  let raster = { width: originalImage.width, height: originalImage.height, data: new Uint8ClampedArray(originalImage.data) };
+  let textObjects = [];
+  let ocrWarning = '';
+  const useOcr = $('#detectText')?.checked;
+
+  if (useOcr) {
+    try {
+      status.textContent = 'Detecting text with Tesseract.js…';
+      const recognized = await recognizeText(sourceCanvas, {
+        language: $('#ocrLanguage')?.value || 'eng',
+        minConfidence: 55,
+        onProgress: (value, stage) => setProgress(0.04 + value * 0.28, stage)
+      });
+      textObjects = createTextObjects(recognized.words, raster, {
+        originalWidth: originalSize.width,
+        originalHeight: originalSize.height
+      });
+      raster = maskDetectedText(raster, recognized.words);
+      setProgress(0.32, textObjects.length ? `Recovered ${textObjects.length} text object${textObjects.length === 1 ? '' : 's'}` : 'No confident text found');
+    } catch (error) {
+      ocrWarning = 'OCR unavailable; exported geometry only';
+      console.warn(error);
+      setProgress(0.32, 'OCR skipped');
+    }
+  }
+
   const worker = new Worker('./src/worker.js', { type: 'module' });
+  const base = useOcr ? 0.32 : 0.02;
+  const span = 1 - base;
 
   worker.onmessage = (event) => {
     const msg = event.data;
-    if (msg.type === 'progress') setProgress(msg.value, msg.stage);
+    if (msg.type === 'progress') setProgress(base + msg.value * span, msg.stage);
     if (msg.type === 'result') {
-      renderResult(msg.result);
+      renderResult(msg.result, textObjects, ocrWarning);
       setProgress(1, 'Done');
       runBtn.disabled = false;
       worker.terminate();
@@ -301,7 +344,7 @@ async function vectorize() {
     runBtn.disabled = false;
     worker.terminate();
   };
-  worker.postMessage({ width: img.width, height: img.height, buffer: img.data.buffer, options: options() }, [img.data.buffer]);
+  worker.postMessage({ width: raster.width, height: raster.height, buffer: raster.data.buffer, options: options() }, [raster.data.buffer]);
 }
 
 function downloadSVG() {

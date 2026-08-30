@@ -3,8 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="description" content="ClusterGlyph converts PNG and raster images to compact SVG using perceptual color clustering, contour tracing, polygon simplification, and circle/ellipse detection — entirely in your browser." />
-  <meta name="theme-color" content="#111318" />
+  <meta name="description" content="ClusterGlyph converts PNG and raster images into compact, editable SVG using perceptual color clustering, connected-object tracing, polygon simplification, and circle/ellipse recovery — entirely in your browser." />
+  <meta name="theme-color" content="#0b0d10" />
+  <meta property="og:title" content="ClusterGlyph — Geometry-aware raster to SVG" />
+  <meta property="og:description" content="Turn raster images into clean, editable SVG geometry locally in your browser." />
+  <meta property="og:type" content="website" />
   <title>ClusterGlyph — Geometry-aware PNG to SVG</title>
   <link rel="icon" href="./assets/logo.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="./styles.css" />
@@ -15,77 +18,195 @@
       <img src="./assets/logo.svg" alt="" />
       <span>ClusterGlyph</span>
     </a>
-    <div class="badges"><span>100% local</span><span>No upload</span><span>Open source</span></div>
-    <a class="github" href="https://github.com/vtavakkoli/ClusterGlyph" target="_blank" rel="noreferrer">GitHub</a>
+
+    <nav class="topnav" aria-label="Primary navigation">
+      <a href="#workspace">Vectorizer</a>
+      <a href="#workflow">How it works</a>
+    </nav>
+
+    <div class="badges" aria-label="Project highlights">
+      <span>100% local</span>
+      <span>Zero runtime deps</span>
+    </div>
+
+    <a class="github" href="https://github.com/vtavakkoli/ClusterGlyph" target="_blank" rel="noreferrer">
+      GitHub <span aria-hidden="true">↗</span>
+    </a>
   </header>
 
   <main>
-    <section class="hero">
-      <div>
-        <p class="eyebrow">RASTER → GEOMETRY</p>
-        <h1>Turn pixels into <em>clean SVG shapes.</em></h1>
-        <p class="lead">Choose exactly how many color clusters you want. Each spatially connected region becomes one independently editable SVG object with a stable ID. Simplify polygon points, recover circles and ellipses, then edit vertices before export — all locally.</p>
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow">LOCAL RASTER → EDITABLE GEOMETRY</p>
+        <h1 id="hero-title">Turn pixels into <em>clean SVG shapes.</em></h1>
+        <p class="lead">
+          Control the exact color-cluster count, trace each connected region as an independent SVG object,
+          simplify polygon points, recover circles and ellipses, and edit vertices before export.
+          Everything runs locally in your browser.
+        </p>
+
+        <div class="hero-actions">
+          <a class="primary action-link" href="#workspace">Start vectorizing</a>
+          <a class="secondary action-link" href="https://github.com/vtavakkoli/ClusterGlyph" target="_blank" rel="noreferrer">View source</a>
+        </div>
+
+        <div class="hero-facts" aria-label="Technical highlights">
+          <span><strong>1–32</strong> color clusters</span>
+          <span><strong>Editable</strong> connected objects</span>
+          <span><strong>No upload</strong> required</span>
+        </div>
       </div>
-      <div class="pipeline" aria-label="Vectorization pipeline">
-        <span>PNG</span><b>→</b><span>Color clusters</span><b>→</b><span>Contours</span><b>→</b><span>Geometry</span><b>→</b><span>SVG</span>
+
+      <div class="hero-flow">
+        <p class="pipeline-label">Vectorization pipeline</p>
+        <div class="pipeline" aria-label="PNG to color clusters to contours to geometry to SVG">
+          <span>PNG</span>
+          <b aria-hidden="true">→</b>
+          <span>Color clusters</span>
+          <b aria-hidden="true">→</b>
+          <span>Contours</span>
+          <b aria-hidden="true">→</b>
+          <span>Geometry</span>
+          <b aria-hidden="true">→</b>
+          <span>SVG</span>
+        </div>
+        <p class="pipeline-note">One deterministic path from raster pixels to editable vector objects.</p>
       </div>
     </section>
 
-    <section class="workspace">
+    <section id="workspace" class="workspace" aria-label="ClusterGlyph vectorizer">
       <aside class="controls panel">
-        <div class="section-head"><h2>Input</h2><span id="status">Choose an image</span></div>
+        <div class="section-head">
+          <div>
+            <p class="section-kicker">Step 1</p>
+            <h2>Input</h2>
+          </div>
+          <span id="status">Choose an image</span>
+        </div>
+
         <div id="drop" class="dropzone">
           <input id="file" type="file" accept="image/png,image/jpeg,image/webp,image/*" hidden />
-          <div class="drop-icon">＋</div>
+          <div class="drop-icon" aria-hidden="true">＋</div>
           <strong>Drop a raster image here</strong>
           <span>PNG, JPG, WebP and browser-supported formats</span>
           <button id="browseBtn" class="secondary" type="button">Choose image</button>
           <small id="fileMeta">Nothing selected</small>
         </div>
 
-        <div class="section-head settings-title"><h2>Vectorization</h2><span>Fine tune</span></div>
-        <label class="control-row"><span><b>Color clusters</b><small>Exact target count for perceptual Lab k-means</small></span><output id="clustersValue"></output></label>
-        <div class="cluster-control"><input id="clusters" type="range" min="1" max="32" value="8" /><input id="clustersNumber" type="number" min="1" max="32" value="8" aria-label="Number of color clusters" /></div>
+        <div class="section-head settings-title">
+          <div>
+            <p class="section-kicker">Step 2</p>
+            <h2>Vectorization</h2>
+          </div>
+          <span>Fine tune</span>
+        </div>
 
-        <label class="control-row"><span><b>Processing resolution</b><small>Long-edge raster used for tracing</small></span><output id="maxDimValue"></output></label>
+        <label class="control-row">
+          <span><b>Color clusters</b><small>Exact target count for perceptual Lab k-means</small></span>
+          <output id="clustersValue"></output>
+        </label>
+        <div class="cluster-control">
+          <input id="clusters" type="range" min="1" max="32" value="8" />
+          <input id="clustersNumber" type="number" min="1" max="32" value="8" aria-label="Number of color clusters" />
+        </div>
+
+        <label class="control-row">
+          <span><b>Processing resolution</b><small>Long-edge raster used for tracing</small></span>
+          <output id="maxDimValue"></output>
+        </label>
         <input id="maxDim" type="range" min="180" max="1000" step="20" value="600" />
 
-        <label class="control-row"><span><b>Polygon simplification</b><small>Higher = fewer points</small></span><output id="simplifyValue"></output></label>
+        <label class="control-row">
+          <span><b>Polygon simplification</b><small>Higher = fewer points</small></span>
+          <output id="simplifyValue"></output>
+        </label>
         <input id="simplify" type="range" min="0" max="6" step="0.1" value="1.5" />
 
-        <label class="control-row"><span><b>Minimum region</b><small>Discard isolated raster noise</small></span><output id="minAreaValue"></output></label>
+        <label class="control-row">
+          <span><b>Minimum region</b><small>Discard isolated raster noise</small></span>
+          <output id="minAreaValue"></output>
+        </label>
         <input id="minArea" type="range" min="1" max="300" value="8" />
 
-        <label class="control-row"><span><b>Round-shape tolerance</b><small>Circle / ellipse fit threshold</small></span><output id="shapeToleranceValue"></output></label>
+        <label class="control-row">
+          <span><b>Round-shape tolerance</b><small>Circle / ellipse fit threshold</small></span>
+          <output id="shapeToleranceValue"></output>
+        </label>
         <input id="shapeTolerance" type="range" min="0.03" max="0.16" step="0.01" value="0.08" />
 
         <div class="inline-settings">
           <label class="check"><input id="detectGeometry" type="checkbox" checked /><span>Detect circles & ellipses</span></label>
-          <label>Precision <select id="precision"><option>0</option><option>1</option><option selected>2</option><option>3</option></select></label>
+          <label>Precision
+            <select id="precision">
+              <option>0</option>
+              <option>1</option>
+              <option selected>2</option>
+              <option>3</option>
+            </select>
+          </label>
         </div>
 
         <button id="runBtn" class="primary" disabled>Vectorize image</button>
-        <div class="progress-wrap"><progress id="progress" max="100" value="0"></progress><span id="progressText">Ready</span></div>
+        <div class="progress-wrap">
+          <progress id="progress" max="100" value="0"></progress>
+          <span id="progressText">Ready</span>
+        </div>
       </aside>
 
       <section class="preview panel">
-        <div class="section-head"><h2>Preview</h2><span>Original / vector</span></div>
+        <div class="section-head">
+          <div>
+            <p class="section-kicker">Step 3</p>
+            <h2>Preview & edit</h2>
+          </div>
+          <span>Original / vector</span>
+        </div>
+
         <div class="compare-stage">
           <div class="canvas-wrap source"><canvas id="sourceCanvas"></canvas></div>
           <div class="canvas-wrap vector"><div id="svgPreview"></div></div>
           <div class="divider"></div>
           <div id="emptyPreview" class="empty">Your vector preview will appear here.</div>
         </div>
-        <label class="compare-slider"><span>Original</span><input id="compare" type="range" min="0" max="100" value="50" /><span>SVG</span></label>
+
+        <label class="compare-slider">
+          <span>Original</span>
+          <input id="compare" type="range" min="0" max="100" value="50" />
+          <span>SVG</span>
+        </label>
+
         <div id="palette" class="palette" aria-label="Detected color palette"></div>
-        <div class="actions"><button id="downloadBtn" class="primary" disabled>Download SVG</button><button id="copyBtn" class="secondary" disabled>Copy SVG</button></div>
+
+        <div class="actions">
+          <button id="downloadBtn" class="primary" disabled>Download SVG</button>
+          <button id="copyBtn" class="secondary" disabled>Copy SVG</button>
+        </div>
 
         <div class="object-editor">
-          <div class="section-head"><h2>Edit objects</h2><span>Click a shape or drag polygon vertices</span></div>
-          <div class="editor-toolbar"><select id="objectSelect" aria-label="Select vector object"><option value="">No objects yet</option></select><button id="resetEditsBtn" class="secondary" disabled>Reset edits</button></div>
+          <div class="section-head">
+            <div>
+              <p class="section-kicker">Object editor</p>
+              <h2>Edit geometry</h2>
+            </div>
+            <span>Click a shape or drag polygon vertices</span>
+          </div>
+
+          <div class="editor-toolbar">
+            <select id="objectSelect" aria-label="Select vector object">
+              <option value="">No objects yet</option>
+            </select>
+            <button id="resetEditsBtn" class="secondary" disabled>Reset edits</button>
+          </div>
+
           <div id="editorEmpty" class="editor-empty">Vectorize an image, then select an object in the preview.</div>
+
           <div id="editorFields" class="editor-fields" hidden>
-            <dl class="object-meta"><div><dt>ID</dt><dd id="objectId"></dd></div><div><dt>Type</dt><dd id="objectType"></dd></div><div><dt>Cluster</dt><dd id="objectCluster"></dd></div><div><dt>Vertices</dt><dd id="objectPoints"></dd></div></dl>
+            <dl class="object-meta">
+              <div><dt>ID</dt><dd id="objectId"></dd></div>
+              <div><dt>Type</dt><dd id="objectType"></dd></div>
+              <div><dt>Cluster</dt><dd id="objectCluster"></dd></div>
+              <div><dt>Vertices</dt><dd id="objectPoints"></dd></div>
+            </dl>
             <label class="fill-control"><span>Fill color</span><input id="objectFill" type="color" value="#000000" /></label>
             <p class="editor-help">Polygon objects expose draggable vertex handles. Regions with holes remain one compound SVG object so the holes are preserved.</p>
             <button id="deleteObjectBtn" class="danger" type="button">Delete selected object</button>
@@ -94,20 +215,61 @@
       </section>
     </section>
 
-    <section class="metrics panel">
-      <div class="section-head"><h2>Optimization report</h2><span>What changed</span></div>
+    <section class="metrics panel" aria-labelledby="metrics-title">
+      <div class="section-head">
+        <div>
+          <p class="section-kicker">Output</p>
+          <h2 id="metrics-title">Optimization report</h2>
+        </div>
+        <span>What changed</span>
+      </div>
       <div id="stats" class="stats"><span class="muted">Vectorize an image to see optimization statistics.</span></div>
     </section>
 
-    <section class="explain">
-      <article><span>01</span><h3>Cluster color</h3><p>Pixels are grouped in perceptual Lab color space, producing a compact palette before any tracing begins.</p></article>
-      <article><span>02</span><h3>One object per region</h3><p>Each spatially connected component is separated into its own stable SVG object instead of merging unrelated areas that share a color.</p></article>
-      <article><span>03</span><h3>Reduce points</h3><p>Collinear cleanup plus Ramer–Douglas–Peucker simplification removes unnecessary polygon vertices.</p></article>
-      <article><span>04</span><h3>Edit & recover geometry</h3><p>Drag polygon vertices directly in the preview. Round contours can still become native <code>&lt;circle&gt;</code> or <code>&lt;ellipse&gt;</code> primitives.</p></article>
+    <section id="workflow" class="workflow-section" aria-labelledby="workflow-title">
+      <div class="workflow-heading">
+        <p class="eyebrow">HOW IT WORKS</p>
+        <h2 id="workflow-title">A geometry-first vectorization pipeline.</h2>
+        <p>ClusterGlyph keeps color segmentation, connected-object extraction, contour optimization, and editable SVG serialization explicit and inspectable.</p>
+      </div>
+
+      <div class="explain">
+        <article>
+          <span>01</span>
+          <h3>Cluster color</h3>
+          <p>Pixels are grouped in perceptual Lab color space, producing a controlled palette before any tracing begins.</p>
+        </article>
+        <article>
+          <span>02</span>
+          <h3>Separate objects</h3>
+          <p>Every spatially connected component becomes its own stable SVG object, even when multiple objects share a color.</p>
+        </article>
+        <article>
+          <span>03</span>
+          <h3>Reduce points</h3>
+          <p>Collinear cleanup plus Ramer–Douglas–Peucker simplification removes unnecessary polygon vertices.</p>
+        </article>
+        <article>
+          <span>04</span>
+          <h3>Edit & recover geometry</h3>
+          <p>Drag polygon vertices directly in the preview. Round contours can become native <code>&lt;circle&gt;</code> or <code>&lt;ellipse&gt;</code> primitives.</p>
+        </article>
+      </div>
     </section>
   </main>
 
-  <footer><span>ClusterGlyph · geometry-aware raster vectorization</span><span>Runs locally in your browser</span></footer>
+  <footer>
+    <div>
+      <strong>ClusterGlyph</strong>
+      <span>Geometry-aware raster vectorization.</span>
+    </div>
+    <div class="footer-links">
+      <a href="#workspace">Vectorizer</a>
+      <a href="https://github.com/vtavakkoli/ClusterGlyph" target="_blank" rel="noreferrer">GitHub</a>
+      <span>MIT · 2026</span>
+    </div>
+  </footer>
+
   <script type="module" src="./src/app.js"></script>
 </body>
 </html>

@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="description" content="ClusterGlyph converts PNG and raster images into compact, editable SVG using OCR text recovery, perceptual color clustering, connected-object tracing, polygon simplification, and circle/ellipse recovery — in your browser." />
+  <meta name="description" content="ClusterGlyph reconstructs raster images as semantic, editable SVG using source-resolution OCR, raster-fitted native text, anti-alias cleanup, primitive recovery, curve fitting, and semantic groups." />
   <meta name="theme-color" content="#0b0d10" />
-  <meta property="og:title" content="ClusterGlyph — Text-aware raster to SVG" />
-  <meta property="og:description" content="Turn raster images into clean, editable SVG geometry and native text objects locally in your browser." />
+  <meta property="og:title" content="ClusterGlyph — Semantic raster to SVG" />
+  <meta property="og:description" content="Recover real text, rectangles, circles, lines, curves, and editable SVG groups directly in your browser." />
   <meta property="og:type" content="website" />
-  <title>ClusterGlyph — Text-aware PNG to SVG</title>
+  <title>ClusterGlyph — Semantic PNG to SVG</title>
   <link rel="icon" href="./assets/logo.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
@@ -26,7 +26,7 @@
 
     <div class="badges" aria-label="Project highlights">
       <span>Image stays local</span>
-      <span>Tesseract OCR</span>
+      <span>Semantic SVG</span>
     </div>
 
     <a class="github" href="https://github.com/vtavakkoli/ClusterGlyph" target="_blank" rel="noreferrer">
@@ -37,40 +37,40 @@
   <main>
     <section class="hero" aria-labelledby="hero-title">
       <div class="hero-copy">
-        <p class="eyebrow">LOCAL RASTER → EDITABLE SVG</p>
-        <h1 id="hero-title">Turn pixels into <em>shapes and real text.</em></h1>
+        <p class="eyebrow">RASTER → SEMANTIC EDITABLE SVG</p>
+        <h1 id="hero-title">Reconstruct the <em>objects behind the pixels.</em></h1>
         <p class="lead">
-          Detect text with Tesseract.js and preserve it as native SVG <code>&lt;text&gt;</code>, while graphics are processed with
-          color clustering, connected-region tracing, polygon simplification, and circle/ellipse recovery.
-          Your raster image stays in the browser.
+          Tesseract.js recovers source-resolution text as native SVG <code>&lt;text&gt;</code>, while the graphics engine
+          reconstructs rectangles, circles, ellipses, lines, smooth curves, compound shapes, and semantic groups.
+          Anti-aliased raster fragments are cleaned before tracing, and everything runs in your browser.
         </p>
 
         <div class="hero-actions">
-          <a class="primary action-link" href="#workspace">Start vectorizing</a>
+          <a class="primary action-link" href="#workspace">Start reconstructing</a>
           <a class="secondary action-link" href="https://github.com/vtavakkoli/ClusterGlyph" target="_blank" rel="noreferrer">View source</a>
         </div>
 
         <div class="hero-facts" aria-label="Technical highlights">
-          <span><strong>1–32</strong> color clusters</span>
-          <span><strong>OCR text</strong> stays editable</span>
+          <span><strong>Source-res</strong> OCR</span>
+          <span><strong>Native</strong> SVG primitives</span>
           <span><strong>No image upload</strong> required</span>
         </div>
       </div>
 
       <div class="hero-flow">
-        <p class="pipeline-label">Vectorization pipeline</p>
-        <div class="pipeline" aria-label="PNG to OCR and color clusters to contours to text and geometry to SVG">
+        <p class="pipeline-label">Reconstruction pipeline</p>
+        <div class="pipeline" aria-label="PNG to semantic analysis to primitive reconstruction to grouped SVG">
           <span>PNG</span>
           <b aria-hidden="true">→</b>
           <span>OCR + clusters</span>
           <b aria-hidden="true">→</b>
-          <span>Contours</span>
+          <span>Semantic analysis</span>
           <b aria-hidden="true">→</b>
-          <span>Text + geometry</span>
+          <span>Native primitives</span>
           <b aria-hidden="true">→</b>
           <span>SVG</span>
         </div>
-        <p class="pipeline-note">Text becomes editable SVG text; graphics become editable vector geometry.</p>
+        <p class="pipeline-note">Text becomes real text; cards become rectangles; round objects become circles; smooth contours become curves.</p>
       </div>
     </section>
 
@@ -96,7 +96,7 @@
         <div class="section-head settings-title">
           <div>
             <p class="section-kicker">Step 2</p>
-            <h2>Vectorization</h2>
+            <h2>Reconstruction</h2>
           </div>
           <span>Fine tune</span>
         </div>
@@ -111,13 +111,13 @@
         </div>
 
         <label class="control-row">
-          <span><b>Processing resolution</b><small>Long-edge raster used for OCR and tracing</small></span>
+          <span><b>Processing resolution</b><small>Long-edge raster used for geometry tracing; OCR uses source resolution</small></span>
           <output id="maxDimValue"></output>
         </label>
-        <input id="maxDim" type="range" min="180" max="1000" step="20" value="600" />
+        <input id="maxDim" type="range" min="180" max="1400" step="20" value="700" />
 
         <label class="control-row">
-          <span><b>Polygon simplification</b><small>Higher = fewer points</small></span>
+          <span><b>Polygon simplification</b><small>Higher = fewer points for residual polygons</small></span>
           <output id="simplifyValue"></output>
         </label>
         <input id="simplify" type="range" min="0" max="6" step="0.1" value="1.5" />
@@ -129,13 +129,13 @@
         <input id="minArea" type="range" min="1" max="300" value="8" />
 
         <label class="control-row">
-          <span><b>Round-shape tolerance</b><small>Circle / ellipse fit threshold</small></span>
+          <span><b>Primitive tolerance</b><small>Circle / ellipse / rectangle fit threshold</small></span>
           <output id="shapeToleranceValue"></output>
         </label>
         <input id="shapeTolerance" type="range" min="0.03" max="0.16" step="0.01" value="0.08" />
 
         <div class="inline-settings">
-          <label class="check"><input id="detectGeometry" type="checkbox" checked /><span>Detect circles & ellipses</span></label>
+          <label class="check"><input id="detectGeometry" type="checkbox" checked /><span>Recover native geometry</span></label>
           <label>Precision
             <select id="precision">
               <option>0</option>
@@ -144,6 +144,11 @@
               <option>3</option>
             </select>
           </label>
+        </div>
+
+        <div class="inline-settings">
+          <label class="check"><input id="detectRectangles" type="checkbox" checked /><span>Rectangles & cards</span></label>
+          <label class="check"><input id="fitCurves" type="checkbox" checked /><span>Smooth Bézier curves</span></label>
         </div>
 
         <div class="inline-settings">
@@ -157,7 +162,19 @@
           </label>
         </div>
 
-        <button id="runBtn" class="primary" disabled>Vectorize image</button>
+        <div class="inline-settings">
+          <label>Edge cleanup
+            <select id="edgeCleanup">
+              <option value="0">Off</option>
+              <option value="1" selected>Normal</option>
+              <option value="2">Strong</option>
+              <option value="3">Maximum</option>
+            </select>
+          </label>
+          <span title="Merges isolated anti-aliased cluster pixels into their local majority.">Anti-alias merge</span>
+        </div>
+
+        <button id="runBtn" class="primary" disabled>Reconstruct SVG</button>
         <div class="progress-wrap">
           <progress id="progress" max="100" value="0"></progress>
           <span id="progressText">Ready</span>
@@ -177,7 +194,7 @@
           <div class="canvas-wrap source"><canvas id="sourceCanvas"></canvas></div>
           <div class="canvas-wrap vector"><div id="svgPreview"></div></div>
           <div class="divider"></div>
-          <div id="emptyPreview" class="empty">Your vector preview will appear here.</div>
+          <div id="emptyPreview" class="empty">Your reconstructed SVG will appear here.</div>
         </div>
 
         <label class="compare-slider">
@@ -199,7 +216,7 @@
               <p class="section-kicker">Object editor</p>
               <h2>Edit objects</h2>
             </div>
-            <span>Click a shape or detected text object</span>
+            <span>Click a reconstructed shape or text line</span>
           </div>
 
           <div class="editor-toolbar">
@@ -209,17 +226,17 @@
             <button id="resetEditsBtn" class="secondary" disabled>Reset edits</button>
           </div>
 
-          <div id="editorEmpty" class="editor-empty">Vectorize an image, then select an object in the preview.</div>
+          <div id="editorEmpty" class="editor-empty">Reconstruct an image, then select an object in the preview.</div>
 
           <div id="editorFields" class="editor-fields" hidden>
             <dl class="object-meta">
               <div><dt>ID</dt><dd id="objectId"></dd></div>
               <div><dt>Type</dt><dd id="objectType"></dd></div>
-              <div><dt>Cluster / font</dt><dd id="objectCluster"></dd></div>
+              <div><dt>Group / font</dt><dd id="objectCluster"></dd></div>
               <div><dt>Points / size</dt><dd id="objectPoints"></dd></div>
             </dl>
             <label class="fill-control"><span>Fill color</span><input id="objectFill" type="color" value="#000000" /></label>
-            <p class="editor-help">Polygon objects expose draggable vertex handles. OCR regions export as native SVG <code>&lt;text&gt;</code> elements with estimated font family, size, weight, color, and position.</p>
+            <p class="editor-help">Residual polygons expose draggable vertex handles. OCR lines export as native SVG <code>&lt;text&gt;</code> with fitted font family, size, weight, width, color, and source placement.</p>
             <button id="deleteObjectBtn" class="danger" type="button">Delete selected object</button>
           </div>
         </div>
@@ -230,40 +247,40 @@
       <div class="section-head">
         <div>
           <p class="section-kicker">Output</p>
-          <h2 id="metrics-title">Optimization report</h2>
+          <h2 id="metrics-title">Reconstruction report</h2>
         </div>
-        <span>What changed</span>
+        <span>What became semantic</span>
       </div>
-      <div id="stats" class="stats"><span class="muted">Vectorize an image to see optimization statistics.</span></div>
+      <div id="stats" class="stats"><span class="muted">Reconstruct an image to see optimization statistics.</span></div>
     </section>
 
     <section id="workflow" class="workflow-section" aria-labelledby="workflow-title">
       <div class="workflow-heading">
         <p class="eyebrow">HOW IT WORKS</p>
-        <h2 id="workflow-title">A text-aware, geometry-first vectorization pipeline.</h2>
-        <p>ClusterGlyph keeps OCR, color segmentation, connected-object extraction, contour optimization, and editable SVG serialization explicit and inspectable.</p>
+        <h2 id="workflow-title">From contour tracing to semantic reconstruction.</h2>
+        <p>ClusterGlyph asks which SVG object most likely produced each raster region, rather than blindly turning every edge color into another polygon.</p>
       </div>
 
       <div class="explain">
         <article>
           <span>01</span>
-          <h3>Recover text</h3>
-          <p>Tesseract.js detects words in-browser. ClusterGlyph estimates their color, common font family, weight, size, and original placement.</p>
+          <h3>Recover typography</h3>
+          <p>Source-resolution Tesseract.js groups words into lines. Candidate fonts are rendered and compared with source glyph masks, then exported with exact line-width fitting.</p>
         </article>
         <article>
           <span>02</span>
-          <h3>Cluster & separate</h3>
-          <p>Graphics are grouped in perceptual Lab color space and every spatially connected component becomes its own SVG object.</p>
+          <h3>Repair the raster</h3>
+          <p>Detected glyph masks are dilated to include anti-aliasing, filled with the estimated local background, and isolated cluster fringes are merged.</p>
         </article>
         <article>
           <span>03</span>
-          <h3>Reduce points</h3>
-          <p>Collinear cleanup plus Ramer–Douglas–Peucker simplification removes unnecessary polygon vertices.</p>
+          <h3>Recover primitives</h3>
+          <p>Panels become rectangles, round objects become circles/ellipses, thin strokes become lines, and smooth contours can become cubic Bézier paths.</p>
         </article>
         <article>
           <span>04</span>
-          <h3>Export semantic SVG</h3>
-          <p>Round contours become <code>&lt;circle&gt;</code>/<code>&lt;ellipse&gt;</code>; detected words become native <code>&lt;text&gt;</code> instead of traced letter polygons.</p>
+          <h3>Group & export</h3>
+          <p>Panels, artwork, and OCR blocks receive semantic groups and stable metadata before editable SVG serialization.</p>
         </article>
       </div>
     </section>
@@ -272,7 +289,7 @@
   <footer>
     <div>
       <strong>ClusterGlyph</strong>
-      <span>Text-aware raster vectorization.</span>
+      <span>Semantic raster reconstruction.</span>
     </div>
     <div class="footer-links">
       <a href="#workspace">Vectorizer</a>

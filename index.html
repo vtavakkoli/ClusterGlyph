@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="description" content="ClusterGlyph converts PNG and raster images into compact, editable SVG using perceptual color clustering, connected-object tracing, polygon simplification, and circle/ellipse recovery — entirely in your browser." />
+  <meta name="description" content="ClusterGlyph converts PNG and raster images into compact, editable SVG using OCR text recovery, perceptual color clustering, connected-object tracing, polygon simplification, and circle/ellipse recovery — in your browser." />
   <meta name="theme-color" content="#0b0d10" />
-  <meta property="og:title" content="ClusterGlyph — Geometry-aware raster to SVG" />
-  <meta property="og:description" content="Turn raster images into clean, editable SVG geometry locally in your browser." />
+  <meta property="og:title" content="ClusterGlyph — Text-aware raster to SVG" />
+  <meta property="og:description" content="Turn raster images into clean, editable SVG geometry and native text objects locally in your browser." />
   <meta property="og:type" content="website" />
-  <title>ClusterGlyph — Geometry-aware PNG to SVG</title>
+  <title>ClusterGlyph — Text-aware PNG to SVG</title>
   <link rel="icon" href="./assets/logo.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
@@ -25,8 +25,8 @@
     </nav>
 
     <div class="badges" aria-label="Project highlights">
-      <span>100% local</span>
-      <span>Zero runtime deps</span>
+      <span>Image stays local</span>
+      <span>Tesseract OCR</span>
     </div>
 
     <a class="github" href="https://github.com/vtavakkoli/ClusterGlyph" target="_blank" rel="noreferrer">
@@ -37,12 +37,12 @@
   <main>
     <section class="hero" aria-labelledby="hero-title">
       <div class="hero-copy">
-        <p class="eyebrow">LOCAL RASTER → EDITABLE GEOMETRY</p>
-        <h1 id="hero-title">Turn pixels into <em>clean SVG shapes.</em></h1>
+        <p class="eyebrow">LOCAL RASTER → EDITABLE SVG</p>
+        <h1 id="hero-title">Turn pixels into <em>shapes and real text.</em></h1>
         <p class="lead">
-          Control the exact color-cluster count, trace each connected region as an independent SVG object,
-          simplify polygon points, recover circles and ellipses, and edit vertices before export.
-          Everything runs locally in your browser.
+          Detect text with Tesseract.js and preserve it as native SVG <code>&lt;text&gt;</code>, while graphics are processed with
+          color clustering, connected-region tracing, polygon simplification, and circle/ellipse recovery.
+          Your raster image stays in the browser.
         </p>
 
         <div class="hero-actions">
@@ -52,25 +52,25 @@
 
         <div class="hero-facts" aria-label="Technical highlights">
           <span><strong>1–32</strong> color clusters</span>
-          <span><strong>Editable</strong> connected objects</span>
-          <span><strong>No upload</strong> required</span>
+          <span><strong>OCR text</strong> stays editable</span>
+          <span><strong>No image upload</strong> required</span>
         </div>
       </div>
 
       <div class="hero-flow">
         <p class="pipeline-label">Vectorization pipeline</p>
-        <div class="pipeline" aria-label="PNG to color clusters to contours to geometry to SVG">
+        <div class="pipeline" aria-label="PNG to OCR and color clusters to contours to text and geometry to SVG">
           <span>PNG</span>
           <b aria-hidden="true">→</b>
-          <span>Color clusters</span>
+          <span>OCR + clusters</span>
           <b aria-hidden="true">→</b>
           <span>Contours</span>
           <b aria-hidden="true">→</b>
-          <span>Geometry</span>
+          <span>Text + geometry</span>
           <b aria-hidden="true">→</b>
           <span>SVG</span>
         </div>
-        <p class="pipeline-note">One deterministic path from raster pixels to editable vector objects.</p>
+        <p class="pipeline-note">Text becomes editable SVG text; graphics become editable vector geometry.</p>
       </div>
     </section>
 
@@ -111,7 +111,7 @@
         </div>
 
         <label class="control-row">
-          <span><b>Processing resolution</b><small>Long-edge raster used for tracing</small></span>
+          <span><b>Processing resolution</b><small>Long-edge raster used for OCR and tracing</small></span>
           <output id="maxDimValue"></output>
         </label>
         <input id="maxDim" type="range" min="180" max="1000" step="20" value="600" />
@@ -142,6 +142,17 @@
               <option>1</option>
               <option selected>2</option>
               <option>3</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="inline-settings">
+          <label class="check"><input id="detectText" type="checkbox" checked /><span>Detect editable text</span></label>
+          <label>OCR language
+            <select id="ocrLanguage">
+              <option value="eng" selected>English</option>
+              <option value="deu">German</option>
+              <option value="eng+deu">English + German</option>
             </select>
           </label>
         </div>
@@ -186,9 +197,9 @@
           <div class="section-head">
             <div>
               <p class="section-kicker">Object editor</p>
-              <h2>Edit geometry</h2>
+              <h2>Edit objects</h2>
             </div>
-            <span>Click a shape or drag polygon vertices</span>
+            <span>Click a shape or detected text object</span>
           </div>
 
           <div class="editor-toolbar">
@@ -204,11 +215,11 @@
             <dl class="object-meta">
               <div><dt>ID</dt><dd id="objectId"></dd></div>
               <div><dt>Type</dt><dd id="objectType"></dd></div>
-              <div><dt>Cluster</dt><dd id="objectCluster"></dd></div>
-              <div><dt>Vertices</dt><dd id="objectPoints"></dd></div>
+              <div><dt>Cluster / font</dt><dd id="objectCluster"></dd></div>
+              <div><dt>Points / size</dt><dd id="objectPoints"></dd></div>
             </dl>
             <label class="fill-control"><span>Fill color</span><input id="objectFill" type="color" value="#000000" /></label>
-            <p class="editor-help">Polygon objects expose draggable vertex handles. Regions with holes remain one compound SVG object so the holes are preserved.</p>
+            <p class="editor-help">Polygon objects expose draggable vertex handles. OCR regions export as native SVG <code>&lt;text&gt;</code> elements with estimated font family, size, weight, color, and position.</p>
             <button id="deleteObjectBtn" class="danger" type="button">Delete selected object</button>
           </div>
         </div>
@@ -229,20 +240,20 @@
     <section id="workflow" class="workflow-section" aria-labelledby="workflow-title">
       <div class="workflow-heading">
         <p class="eyebrow">HOW IT WORKS</p>
-        <h2 id="workflow-title">A geometry-first vectorization pipeline.</h2>
-        <p>ClusterGlyph keeps color segmentation, connected-object extraction, contour optimization, and editable SVG serialization explicit and inspectable.</p>
+        <h2 id="workflow-title">A text-aware, geometry-first vectorization pipeline.</h2>
+        <p>ClusterGlyph keeps OCR, color segmentation, connected-object extraction, contour optimization, and editable SVG serialization explicit and inspectable.</p>
       </div>
 
       <div class="explain">
         <article>
           <span>01</span>
-          <h3>Cluster color</h3>
-          <p>Pixels are grouped in perceptual Lab color space, producing a controlled palette before any tracing begins.</p>
+          <h3>Recover text</h3>
+          <p>Tesseract.js detects words in-browser. ClusterGlyph estimates their color, common font family, weight, size, and original placement.</p>
         </article>
         <article>
           <span>02</span>
-          <h3>Separate objects</h3>
-          <p>Every spatially connected component becomes its own stable SVG object, even when multiple objects share a color.</p>
+          <h3>Cluster & separate</h3>
+          <p>Graphics are grouped in perceptual Lab color space and every spatially connected component becomes its own SVG object.</p>
         </article>
         <article>
           <span>03</span>
@@ -251,8 +262,8 @@
         </article>
         <article>
           <span>04</span>
-          <h3>Edit & recover geometry</h3>
-          <p>Drag polygon vertices directly in the preview. Round contours can become native <code>&lt;circle&gt;</code> or <code>&lt;ellipse&gt;</code> primitives.</p>
+          <h3>Export semantic SVG</h3>
+          <p>Round contours become <code>&lt;circle&gt;</code>/<code>&lt;ellipse&gt;</code>; detected words become native <code>&lt;text&gt;</code> instead of traced letter polygons.</p>
         </article>
       </div>
     </section>
@@ -261,7 +272,7 @@
   <footer>
     <div>
       <strong>ClusterGlyph</strong>
-      <span>Geometry-aware raster vectorization.</span>
+      <span>Text-aware raster vectorization.</span>
     </div>
     <div class="footer-links">
       <a href="#workspace">Vectorizer</a>
@@ -270,6 +281,7 @@
     </div>
   </footer>
 
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
   <script type="module" src="./src/app.js"></script>
 </body>
 </html>

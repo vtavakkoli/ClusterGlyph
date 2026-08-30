@@ -1,3 +1,16 @@
+import { serializeObjectsToSvg } from './serializer.js';
+import {
+  polygonArea,
+  detectRectPrimitive,
+  detectRoundPrimitive,
+  shouldUseBezier,
+  catmullRomClosedPath,
+  smoothClusterLabels,
+  assignSemanticGroups
+} from './reconstruction.js';
+
+export { serializeObjectsToSvg } from './serializer.js';
+
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 export function rgbToLab(r, g, b) {
@@ -248,71 +261,33 @@ export function simplifyClosedPolygon(points, epsilon = 1.5) {
   return removeCollinear(merged);
 }
 
-function polygonArea(points) {
-  let a = 0;
-  for (let i = 0; i < points.length; i++) {
-    const p = points[i], q = points[(i + 1) % points.length];
-    a += p[0] * q[1] - q[0] * p[1];
-  }
-  return a / 2;
-}
-
 export function detectRoundShape(points, tolerance = 0.08) {
-  if (points.length < 8) return null;
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const [x, y] of points) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y); }
-  const rx = (maxX - minX) / 2, ry = (maxY - minY) / 2;
-  if (rx < 2 || ry < 2) return null;
-  const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
-  let err = 0;
-  for (const [x, y] of points) {
-    const nr = Math.sqrt(((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2);
-    err += Math.abs(nr - 1);
+  return detectRoundPrimitive(points, tolerance);
+}
+
+function detectLineComponent(component, sx, sy) {
+  const width = component.maxX - component.minX + 1;
+  const height = component.maxY - component.minY + 1;
+  const short = Math.min(width, height), long = Math.max(width, height);
+  if (short > 5 || long / Math.max(1, short) < 5 || component.area < long * 0.6) return null;
+  if (width >= height) {
+    return {
+      type: 'line',
+      x1: component.minX * sx,
+      y1: ((component.minY + component.maxY + 1) / 2) * sy,
+      x2: (component.maxX + 1) * sx,
+      y2: ((component.minY + component.maxY + 1) / 2) * sy,
+      strokeWidth: height * sy
+    };
   }
-  err /= points.length;
-  if (err > tolerance) return null;
-  const aspectDelta = Math.abs(rx - ry) / Math.max(rx, ry);
-  return aspectDelta <= tolerance * 1.15
-    ? { type: 'circle', cx, cy, r: (rx + ry) / 2, error: err }
-    : { type: 'ellipse', cx, cy, rx, ry, error: err };
-}
-
-function fmt(v, precision) {
-  const p = Math.pow(10, precision);
-  const n = Math.round(v * p) / p;
-  return Number.isInteger(n) ? String(n) : String(n);
-}
-
-function pointsAttribute(points, precision) {
-  return points.map(([x, y]) => `${fmt(x, precision)},${fmt(y, precision)}`).join(' ');
-}
-
-function pathForRings(rings, precision) {
-  return rings.map(ring => {
-    if (!ring.length) return '';
-    const parts = [`M${fmt(ring[0][0], precision)} ${fmt(ring[0][1], precision)}`];
-    for (let i = 1; i < ring.length; i++) parts.push(`L${fmt(ring[i][0], precision)} ${fmt(ring[i][1], precision)}`);
-    parts.push('Z');
-    return parts.join('');
-  }).join('');
-}
-
-function objectMarkup(object, precision = 2) {
-  const common = `id="${object.id}" data-object-id="${object.id}" data-cluster="${object.cluster}" fill="${object.fill}"${object.opacity < 0.995 ? ` opacity="${fmt(object.opacity, 3)}"` : ''}`;
-  if (object.type === 'circle') {
-    return `<circle ${common} cx="${fmt(object.cx, precision)}" cy="${fmt(object.cy, precision)}" r="${fmt(object.r, precision)}"/>`;
-  }
-  if (object.type === 'ellipse') {
-    return `<ellipse ${common} cx="${fmt(object.cx, precision)}" cy="${fmt(object.cy, precision)}" rx="${fmt(object.rx, precision)}" ry="${fmt(object.ry, precision)}"/>`;
-  }
-  if (object.rings?.length > 1) {
-    return `<path ${common} d="${pathForRings(object.rings, precision)}" fill-rule="evenodd"/>`;
-  }
-  return `<polygon ${common} points="${pointsAttribute(object.rings?.[0] || object.points || [], precision)}"/>`;
-}
-
-export function serializeObjectsToSvg(objects, width, height, precision = 2) {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${fmt(width, precision)} ${fmt(height, precision)}" width="${fmt(width, precision)}" height="${fmt(height, precision)}">\n${objects.map(o => `  ${objectMarkup(o, precision)}`).join('\n')}\n</svg>`;
+  return {
+    type: 'line',
+    x1: ((component.minX + component.maxX + 1) / 2) * sx,
+    y1: component.minY * sy,
+    x2: ((component.minX + component.maxX + 1) / 2) * sx,
+    y2: (component.maxY + 1) * sy,
+    strokeWidth: width * sx
+  };
 }
 
 export function vectorizeImage(imageData, options = {}, progress = () => {}) {
@@ -321,6 +296,9 @@ export function vectorizeImage(imageData, options = {}, progress = () => {}) {
   const minArea = Math.max(1, options.minArea ?? 8);
   const epsilon = Math.max(0, options.simplify ?? 1.5);
   const detectGeometry = options.detectGeometry !== false;
+  const detectRectangles = options.detectRectangles !== false;
+  const fitCurves = options.fitCurves !== false;
+  const edgeCleanup = clamp(Math.round(options.edgeCleanup ?? 1), 0, 3);
   const shapeTolerance = clamp(options.shapeTolerance ?? 0.08, 0.01, 0.3);
   const originalWidth = options.originalWidth ?? width;
   const originalHeight = options.originalHeight ?? height;
@@ -329,11 +307,13 @@ export function vectorizeImage(imageData, options = {}, progress = () => {}) {
 
   progress(0.05, `Clustering into ${clusters} colors`);
   const clustered = clusterColors(data, clusters, options.clusterIterations ?? 9);
-  progress(0.35, 'Finding connected objects');
-  const { components, componentMap } = findComponents(clustered.labels, width, height, minArea);
+  const labels = edgeCleanup ? smoothClusterLabels(clustered.labels, width, height, edgeCleanup) : clustered.labels;
+  progress(0.3, edgeCleanup ? 'Merging anti-aliased edge fragments' : 'Finding connected objects');
+  const { components, componentMap } = findComponents(labels, width, height, minArea);
 
   const objects = [];
-  let pointsBefore = 0, pointsAfter = 0, circles = 0, ellipses = 0, compoundObjects = 0;
+  let pointsBefore = 0, pointsAfter = 0;
+  let circles = 0, ellipses = 0, rectangles = 0, roundedRects = 0, lines = 0, paths = 0, compoundObjects = 0;
   const sorted = components.sort((a, b) => b.area - a.area);
   sorted.forEach((component, idx) => {
     const rawLoops = buildContours(component, componentMap, width, height)
@@ -344,35 +324,60 @@ export function vectorizeImage(imageData, options = {}, progress = () => {}) {
 
     const palette = clustered.palette[component.label] || { color: '#000000', alpha: 1 };
     const id = `object-${String(objects.length + 1).padStart(3, '0')}`;
+    const bounds = [component.minX * sx, component.minY * sy, (component.maxX + 1) * sx, (component.maxY + 1) * sy];
     const base = {
       id,
       cluster: component.label,
       fill: palette.color,
       opacity: palette.alpha,
       area: component.area,
-      sourceBounds: [component.minX, component.minY, component.maxX, component.maxY]
+      sourceBounds: [component.minX, component.minY, component.maxX, component.maxY],
+      bounds
     };
 
-    let round = null;
-    if (detectGeometry && rawLoops.length === 1) round = detectRoundShape(rawLoops[0], shapeTolerance);
-    if (round?.type === 'circle') {
-      circles++;
-      pointsAfter += 1;
-      objects.push({ ...base, type: 'circle', cx: round.cx * sx, cy: round.cy * sy, r: round.r * (sx + sy) / 2 });
-    } else if (round?.type === 'ellipse') {
-      ellipses++;
-      pointsAfter += 1;
-      objects.push({ ...base, type: 'ellipse', cx: round.cx * sx, cy: round.cy * sy, rx: round.rx * sx, ry: round.ry * sy });
+    const line = detectGeometry ? detectLineComponent(component, sx, sy) : null;
+    if (line) {
+      lines++;
+      pointsAfter += 2;
+      objects.push({ ...base, ...line, stroke: palette.color, semanticRole: 'line' });
     } else {
-      const rings = rawLoops.map(loop => simplifyClosedPolygon(loop, epsilon).map(([x, y]) => [x * sx, y * sy]));
-      if (rings.length > 1) compoundObjects++;
-      pointsAfter += rings.reduce((s, l) => s + l.length, 0);
-      objects.push({ ...base, type: 'polygon', rings });
+      const rect = detectGeometry && detectRectangles && rawLoops.length === 1 ? detectRectPrimitive(rawLoops[0], shapeTolerance) : null;
+      const round = detectGeometry && !rect && rawLoops.length === 1 ? detectRoundPrimitive(rawLoops[0], shapeTolerance) : null;
+      if (rect?.type === 'rect') {
+        rectangles++;
+        pointsAfter += 1;
+        objects.push({ ...base, type: 'rect', x: rect.x * sx, y: rect.y * sy, width: rect.width * sx, height: rect.height * sy, semanticRole: 'rectangle' });
+      } else if (rect?.type === 'roundedRect') {
+        roundedRects++;
+        pointsAfter += 1;
+        objects.push({ ...base, type: 'roundedRect', x: rect.x * sx, y: rect.y * sy, width: rect.width * sx, height: rect.height * sy, rx: rect.rx * (sx + sy) / 2, semanticRole: 'rounded-rectangle' });
+      } else if (round?.type === 'circle') {
+        circles++;
+        pointsAfter += 1;
+        objects.push({ ...base, type: 'circle', cx: round.cx * sx, cy: round.cy * sy, r: round.r * (sx + sy) / 2, semanticRole: 'circle' });
+      } else if (round?.type === 'ellipse') {
+        ellipses++;
+        pointsAfter += 1;
+        objects.push({ ...base, type: 'ellipse', cx: round.cx * sx, cy: round.cy * sy, rx: round.rx * sx, ry: round.ry * sy, semanticRole: 'ellipse' });
+      } else {
+        const rings = rawLoops.map(loop => simplifyClosedPolygon(loop, epsilon).map(([x, y]) => [x * sx, y * sy]));
+        if (rings.length > 1) compoundObjects++;
+        const mainRing = rings[0] || [];
+        if (fitCurves && rings.length === 1 && mainRing.length >= 8 && shouldUseBezier(mainRing)) {
+          paths++;
+          pointsAfter += mainRing.length;
+          objects.push({ ...base, type: 'path', pathData: catmullRomClosedPath(mainRing), rings, semanticRole: 'smooth-path' });
+        } else {
+          pointsAfter += rings.reduce((s, l) => s + l.length, 0);
+          objects.push({ ...base, type: 'polygon', rings, semanticRole: rings.length > 1 ? 'compound-shape' : 'polygon' });
+        }
+      }
     }
-    if (idx % 5 === 0) progress(0.4 + 0.5 * (idx + 1) / Math.max(1, sorted.length), 'Tracing editable objects');
+    if (idx % 5 === 0) progress(0.36 + 0.55 * (idx + 1) / Math.max(1, sorted.length), 'Reconstructing semantic SVG primitives');
   });
 
-  progress(0.95, 'Serializing editable SVG');
+  assignSemanticGroups(objects, originalWidth, originalHeight);
+  progress(0.95, 'Serializing semantic SVG');
   const svg = serializeObjectsToSvg(objects, originalWidth, originalHeight, precision);
   progress(1, 'Done');
   return {
@@ -391,6 +396,10 @@ export function vectorizeImage(imageData, options = {}, progress = () => {}) {
       compoundObjects,
       circles,
       ellipses,
+      rectangles,
+      roundedRects,
+      lines,
+      paths,
       pointsBefore,
       pointsAfter,
       reduction: pointsBefore ? 1 - pointsAfter / pointsBefore : 0,

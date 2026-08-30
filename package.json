@@ -1,0 +1,13 @@
+{
+  "name": "clusterglyph",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Geometry-aware raster-to-SVG vectorizer using color clustering, contour tracing, polygon simplification, and circle/ellipse recovery.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "serve": "python3 -m http.server 8080"
+  },
+  "keywords": ["png-to-svg", "vectorizer", "svg", "image-tracing", "color-clustering", "rdp", "geometry", "github-pages"],
+  "license": "MIT"
+}

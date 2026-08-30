@@ -1,58 +1,85 @@
+<div align="center">
+  <img src="assets/logo.svg" width="88" height="88" alt="ClusterGlyph logo" />
+
 # ClusterGlyph
 
-**Geometry-aware raster-to-SVG vectorization in the browser.**
+**Geometry-aware raster-to-SVG vectorization that runs entirely in your browser.**
 
-ClusterGlyph converts PNG, JPG, WebP, and other browser-readable raster images into compact, editable SVG. You choose the exact color-cluster count (1–32); each spatially connected region becomes its own stable SVG object, then polygon contours are simplified and sufficiently round contours can be recovered as native SVG `<circle>` and `<ellipse>` elements.
+[![Live Demo](https://img.shields.io/badge/live-GitHub%20Pages-b8ff5a?style=flat-square&labelColor=111318)](https://vtavakkoli.github.io/ClusterGlyph/)
+[![Tests](https://img.shields.io/github/actions/workflow/status/vtavakkoli/ClusterGlyph/test.yml?branch=main&style=flat-square&label=tests)](https://github.com/vtavakkoli/ClusterGlyph/actions/workflows/test.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-66e7ff?style=flat-square&labelColor=111318)](LICENSE)
+![Runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-929cab?style=flat-square&labelColor=111318)
 
-> **Privacy first:** image processing happens entirely in the browser. No image is uploaded to a server.
+[**Open the vectorizer**](https://vtavakkoli.github.io/ClusterGlyph/) · [Report a bug](https://github.com/vtavakkoli/ClusterGlyph/issues) · [Request a feature](https://github.com/vtavakkoli/ClusterGlyph/issues)
 
-## Why ClusterGlyph?
+</div>
 
-Most lightweight raster tracers produce path-heavy SVGs. ClusterGlyph is designed around a different pipeline:
+---
 
-1. **Perceptual color clustering** — deterministic k-means in CIE Lab space reduces the raster to a controlled palette.
-2. **Connected-object extraction** — spatially separate areas remain separate objects even when they belong to the same color cluster.
-3. **Boundary tracing** — raster cell edges are chained into closed contours, including internal loops/holes.
-4. **Editable polygon output** — ordinary connected regions are emitted as SVG `<polygon>` elements with stable IDs such as `object-001`. Regions with holes stay one compound object to preserve topology.
-5. **Point optimization** — collinear cleanup and Ramer–Douglas–Peucker simplification reduce polygon vertices.
-6. **Geometry recovery** — round contours are tested against ellipse geometry and emitted as `<circle>` or `<ellipse>` when appropriate.
-7. **Built-in object editor** — select shapes, recolor/delete them, and drag polygon vertices directly in the browser before export.
+ClusterGlyph converts PNG, JPG, WebP, and other browser-readable raster images into compact, editable SVG geometry. You choose the exact color-cluster count, the raster is segmented in perceptual color space, and every spatially connected region becomes its own vector object before polygon simplification and geometry recovery.
+
+> **Privacy by design:** image processing happens locally in the browser. Raster files are never uploaded to a server.
+
+## What makes it different
+
+| Capability | ClusterGlyph approach |
+|---|---|
+| Color reduction | Exact **1–32** cluster target using deterministic CIE Lab k-means |
+| Object separation | Each **spatially connected component** becomes an independent SVG object |
+| Editable output | Stable IDs such as `object-001`; ordinary regions export as `<polygon>` |
+| Geometry cleanup | Collinear cleanup + Ramer–Douglas–Peucker simplification |
+| Primitive recovery | Round regions can become native `<circle>` or `<ellipse>` |
+| In-browser editing | Select, recolor, delete, and drag polygon vertices before export |
+| Privacy | Fully client-side processing |
+| Deployment | Static, dependency-free GitHub Pages application |
+
+## Pipeline
+
+```text
+PNG / raster
+    → perceptual color clusters
+    → connected components
+    → contour tracing
+    → point simplification
+    → circle / ellipse recovery
+    → editable SVG objects
+```
+
+The web UI deliberately shows the same process in one horizontal flow:
+
+**PNG → Color clusters → Contours → Geometry → SVG**
 
 ## Live demo
 
-GitHub Pages is preconfigured with `.github/workflows/pages.yml`.
+**https://vtavakkoli.github.io/ClusterGlyph/**
 
-After pushing to a public GitHub repository:
+No account, backend, API key, or build step is required.
 
-1. Open **Settings → Pages**.
-2. Under **Build and deployment**, choose **GitHub Actions**.
-3. Push to `main` (or run the workflow manually).
+## Best suited for
 
-Your site will be available at:
+ClusterGlyph works especially well with:
 
-`https://vtavakkoli.github.io/ClusterGlyph/`
+- logos and marks
+- icons
+- diagrams
+- flat illustrations
+- UI graphics
+- maps and schematic graphics
+- raster images with a limited number of dominant colors
 
-## Run locally
-
-No build step is required. Because the app uses an ES module Web Worker, serve it over HTTP rather than opening `index.html` directly:
-
-```bash
-npm run serve
-```
-
-Then open `http://localhost:8080`.
+Photographs can also be vectorized, but high cluster counts and fine tracing settings can produce much larger SVG files.
 
 ## Controls
 
 | Setting | Purpose |
 |---|---|
-| Color clusters | Exact target number (1–32) of Lab-space color groups; range and numeric input stay synchronized |
-| Processing resolution | Limits tracing raster size for speed |
-| Polygon simplification | RDP epsilon; larger values reduce more points |
-| Minimum region | Removes tiny isolated color components |
-| Round-shape tolerance | Controls circle/ellipse fitting strictness |
-| Detect circles & ellipses | Enables native SVG geometry recovery |
-| Precision | Decimal precision in exported coordinates |
+| **Color clusters** | Exact target number, from 1 to 32, of perceptual Lab-space color groups |
+| **Processing resolution** | Long-edge raster resolution used for tracing |
+| **Polygon simplification** | RDP epsilon; higher values reduce more vertices |
+| **Minimum region** | Filters isolated raster noise and tiny components |
+| **Round-shape tolerance** | Controls circle/ellipse fitting strictness |
+| **Detect circles & ellipses** | Enables native SVG primitive recovery |
+| **Precision** | Decimal precision used in exported coordinates |
 
 ## Architecture
 
@@ -69,71 +96,137 @@ CIE Lab color clustering
 Per-pixel cluster labels
    │
    ▼
-Connected components
+Connected-component extraction
    │
    ▼
 Boundary edge graph → closed contours
    │
-   ├── round fit ───────► <circle> / <ellipse>
+   ├── round fit ─────────► <circle> / <ellipse>
    │
-   └── simplify (RDP) ─► <polygon> / compound path
-                          │
-                          ▼
-                  Object editor + SVG export
+   └── simplify (RDP) ────► <polygon> / compound path
+                              │
+                              ▼
+                       Object editor
+                              │
+                              ▼
+                          SVG export
 ```
 
 ### Source layout
 
 ```text
 .
-├── index.html                 # GitHub Pages UI
-├── styles.css                 # Responsive interface
+├── index.html
+├── styles.css
+├── assets/
+│   └── logo.svg
 ├── src/
-│   ├── app.js                 # Browser UI, preview, export
-│   ├── worker.js              # Background vectorization worker
-│   └── vectorizer.js          # Core clustering/tracing/geometry engine
-├── tests/vectorizer.test.js   # Node tests for core geometry
-├── assets/logo.svg
-└── .github/workflows/pages.yml
+│   ├── app.js
+│   ├── worker.js
+│   └── vectorizer.js
+├── tests/
+│   └── vectorizer.test.js
+├── .github/
+│   ├── workflows/
+│   │   ├── pages.yml
+│   │   └── test.yml
+│   └── pull_request_template.md
+├── CONTRIBUTING.md
+├── SECURITY.md
+├── LICENSE
+└── package.json
 ```
 
-## Algorithm notes
+## Algorithm
 
-### Color clustering
+### 1. Perceptual color clustering
 
-ClusterGlyph converts sampled sRGB pixels to CIE Lab and performs deterministic farthest-point initialization followed by k-means iterations. Centroids are learned from a capped sample for responsiveness, then all non-transparent pixels are classified.
+Sampled sRGB pixels are converted to CIE Lab. ClusterGlyph uses deterministic farthest-point initialization followed by k-means iterations. Centroids are learned from a capped sample for responsiveness, then all non-transparent pixels are classified.
 
-### Contour extraction
+### 2. Connected-object extraction
 
-For every connected component, exposed raster-cell edges are emitted in a consistent orientation and chained into loops. This makes the tracer dependency-free and produces exact grid-aligned boundaries before simplification.
+Color labels are only the segmentation stage. A connected-component pass then separates regions spatially, so two red objects that do not touch are exported as two independent vector objects even when both belong to the same color cluster.
 
-### One connected object = one editable SVG object
+### 3. Contour tracing
 
-Cluster labels are only the color grouping stage. After clustering, ClusterGlyph performs connected-component analysis, so two red objects that do not touch each other are exported independently. Each object receives a stable `id` and `data-cluster` attribute. A simple contour is an SVG `<polygon>`; a region containing holes is kept as one compound `<path fill-rule="evenodd">` so editability does not come at the cost of broken geometry.
+For each connected component, exposed raster-cell edges are emitted in a consistent orientation and chained into closed loops. Internal loops are retained so holes can be represented correctly.
 
-### Polygon optimization and editing
+### 4. Polygon optimization
 
-The raw contours can contain thousands of adjacent raster points. ClusterGlyph first removes collinear vertices, then applies a closed-polygon variant of Ramer–Douglas–Peucker simplification. After vectorization, a shape can be selected in the preview and polygon vertices can be dragged before the SVG is copied or downloaded. The UI reports the before/after point count.
+Raw raster contours may contain thousands of adjacent points. ClusterGlyph first removes collinear vertices, then applies closed-polygon Ramer–Douglas–Peucker simplification.
 
-### Circle and ellipse recovery
+Simple regions are serialized as editable SVG `<polygon>` elements. Regions with holes remain a single compound `<path fill-rule="evenodd">` to preserve topology.
 
-A contour is tested against an axis-aligned ellipse derived from its bounding box. When normalized radial error is below the selected tolerance, the contour is serialized as a native circle or ellipse. This typically makes icons and logos easier to edit and substantially smaller than polygon-only tracing.
+### 5. Circle and ellipse recovery
 
-## Current scope
+Contours are tested against axis-aligned ellipse geometry derived from their bounding boxes. When normalized radial error is below the selected tolerance, a contour is emitted as a native `<circle>` or `<ellipse>` instead of a point-heavy polygon.
 
-ClusterGlyph is optimized for logos, icons, diagrams, flat illustrations, UI graphics, and images with a limited number of dominant colors. Photographs can be vectorized, but high cluster counts and fine tracing settings may produce large SVGs.
+### 6. Object editing
 
-Potential next steps include Bézier fitting, rotated ellipse fitting, multi-select/object merging, insert/delete vertex tools, hierarchical color merging, edge anti-alias estimation, WebAssembly acceleration, and optional background removal.
+Generated objects receive stable IDs and cluster metadata. The browser editor lets you select objects, change fill colors, delete shapes, and drag polygon vertices. Export always serializes the edited geometry.
 
-## Development
+## Run locally
+
+Requirements: a modern browser and Python 3 for the convenience development server.
 
 ```bash
-npm test
+git clone https://github.com/vtavakkoli/ClusterGlyph.git
+cd ClusterGlyph
 npm run serve
 ```
 
-The implementation intentionally has **zero runtime dependencies**.
+Open:
+
+```text
+http://localhost:8080
+```
+
+There is no frontend build step and the production application has **zero runtime dependencies**.
+
+## Tests
+
+```bash
+npm test
+```
+
+The test suite covers core geometry and vectorization behavior, including:
+
+- polygon simplification
+- circle recognition
+- exact cluster-count behavior
+- disconnected same-color object separation
+- editable polygon serialization
+- geometry re-serialization after edits
+
+Tests also run automatically on pull requests and pushes to `main`.
+
+## GitHub Pages deployment
+
+Deployment is defined in `.github/workflows/pages.yml`.
+
+For repository settings, configure **Settings → Pages → Build and deployment → GitHub Actions**. Pushes to `main` then deploy the static application.
+
+## Roadmap
+
+Good next improvements include:
+
+- Bézier curve fitting
+- rotated ellipse detection
+- multi-select and object merging
+- insert/delete vertex tools
+- hierarchical color merging
+- better anti-aliased edge estimation
+- optional background removal
+- WebAssembly acceleration for large rasters
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and pull-request expectations.
+
+For security-related reports, please follow [SECURITY.md](SECURITY.md) rather than opening a public issue.
 
 ## License
 
-MIT © 2026 Vahid Tavakkoli
+Released under the [MIT License](LICENSE).
+
+Copyright © 2026 Vahid Tavakkoli.

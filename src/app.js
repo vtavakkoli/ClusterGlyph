@@ -1,5 +1,5 @@
 import { serializeObjectsToSvg } from './serializer.js';
-import { recognizeText, createTextObjects, maskDetectedText } from './ocr.js';
+import { recognizeText, createTextObjects, maskDetectedText, scaleOcrDetections } from './ocr.js';
 
 const $ = (s) => document.querySelector(s);
 const drop = $('#drop');
@@ -45,6 +45,7 @@ const bindings = [
 ];
 for (const [id, out, format] of bindings) {
   const el = $(`#${id}`), label = $(`#${out}`);
+  if (!el || !label) continue;
   const update = () => label.textContent = format(el.value);
   el.addEventListener('input', update); update();
 }
@@ -111,8 +112,19 @@ async function loadFile(file) {
   bitmap.close();
   $('#fileMeta').textContent = `${file.name} · ${originalSize.width}×${originalSize.height} · ${humanBytes(file.size)}`;
   runBtn.disabled = false;
-  status.textContent = 'Ready to vectorize';
+  status.textContent = 'Ready to reconstruct';
   setProgress(0, 'Ready');
+}
+
+async function makeSourceResolutionCanvas(file) {
+  const bitmap = await createImageBitmap(file);
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(bitmap, 0, 0);
+  bitmap.close();
+  return canvas;
 }
 
 function options() {
@@ -122,6 +134,9 @@ function options() {
     minArea: Number($('#minArea').value),
     shapeTolerance: Number($('#shapeTolerance').value),
     detectGeometry: $('#detectGeometry').checked,
+    detectRectangles: $('#detectRectangles')?.checked ?? true,
+    fitCurves: $('#fitCurves')?.checked ?? true,
+    edgeCleanup: Number($('#edgeCleanup')?.value ?? 1),
     precision: Number($('#precision').value),
     originalWidth: originalSize.width,
     originalHeight: originalSize.height
@@ -130,8 +145,10 @@ function options() {
 
 function objectPointCount(object) {
   if (object.type === 'text') return 0;
-  if (object.type !== 'polygon') return 1;
-  return (object.rings || []).reduce((sum, ring) => sum + ring.length, 0);
+  if (object.type === 'path') return (object.rings?.[0] || []).length;
+  if (object.type === 'polygon') return (object.rings || []).reduce((sum, ring) => sum + ring.length, 0);
+  if (object.type === 'line') return 2;
+  return 1;
 }
 
 function updateExportSvg() {
@@ -144,7 +161,8 @@ function updateExportSvg() {
 
 function objectLabel(object, index) {
   if (object.type === 'text') return `${index + 1}. ${object.id} · text · “${object.text}”`;
-  return `${index + 1}. ${object.id} · ${object.type} · cluster ${object.cluster + 1}`;
+  const group = object.groupId ? ` · ${object.groupId}` : '';
+  return `${index + 1}. ${object.id} · ${object.type}${object.cluster >= 0 ? ` · cluster ${object.cluster + 1}` : ''}${group}`;
 }
 
 function renderObjectOptions() {
@@ -163,8 +181,8 @@ function renderEditor() {
   objectIdEl.textContent = object.id;
   objectTypeEl.textContent = object.type === 'text' ? `text · ${Math.round(object.confidence || 0)}% OCR` : object.type;
   objectPointsEl.textContent = object.type === 'text' ? `${Number(object.fontSize || 0).toFixed(1)}px` : String(objectPointCount(object));
-  objectClusterEl.textContent = object.type === 'text' ? object.fontFamily || 'OCR' : String(object.cluster + 1);
-  objectFill.value = object.fill;
+  objectClusterEl.textContent = object.type === 'text' ? object.fontFamily || 'OCR' : (object.groupId || String(object.cluster + 1));
+  objectFill.value = object.fill || object.stroke || '#000000';
 }
 
 function decoratePreview() {
@@ -274,12 +292,21 @@ function renderResult(result, textObjects = [], ocrWarning = '') {
   const s = result.stats;
   const outputBytes = new TextEncoder().encode(currentSVG).length;
   const items = [
-    ['Clusters', `${s.clusters}/${s.requestedClusters}`], ['Objects', currentObjects.length], ['Text', textObjects.length], ['Polygons', s.polygons], ['Circles', s.circles], ['Ellipses', s.ellipses],
+    ['Clusters', `${s.clusters}/${s.requestedClusters}`],
+    ['Objects', currentObjects.length],
+    ['Text lines', textObjects.length],
+    ['Rects', (s.rectangles || 0) + (s.roundedRects || 0)],
+    ['Circles', s.circles],
+    ['Ellipses', s.ellipses],
+    ['Lines', s.lines || 0],
+    ['Curves', s.paths || 0],
+    ['Polygons', s.polygons],
     ['Points', `${s.pointsBefore.toLocaleString()} → ${s.pointsAfter.toLocaleString()}`],
-    ['Reduction', `${Math.max(0, s.reduction * 100).toFixed(1)}%`], ['SVG size', humanBytes(outputBytes), 'svgSizeValue']
+    ['Reduction', `${Math.max(0, s.reduction * 100).toFixed(1)}%`],
+    ['SVG size', humanBytes(outputBytes), 'svgSizeValue']
   ];
   statsEl.innerHTML = items.map(([k, v, id]) => `<div class="stat"><span>${k}</span><strong${id ? ` id="${id}"` : ''}>${v}</strong></div>`).join('');
-  status.textContent = ocrWarning ? `Vectorization complete · ${ocrWarning}` : 'Vectorization complete — shapes and text are editable';
+  status.textContent = ocrWarning ? `Reconstruction complete · ${ocrWarning}` : 'Semantic reconstruction complete — native shapes and text are editable';
 }
 
 async function vectorize() {
@@ -288,31 +315,35 @@ async function vectorize() {
   downloadBtn.disabled = true;
   copyBtn.disabled = true;
   setProgress(0.02, 'Preparing image');
-  status.textContent = 'Processing locally in your browser…';
+  status.textContent = 'Reconstructing locally in your browser…';
 
   await loadFile(currentFile);
   runBtn.disabled = true;
   const ctx = sourceCanvas.getContext('2d', { willReadFrequently: true });
-  const originalImage = ctx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
-  let raster = { width: originalImage.width, height: originalImage.height, data: new Uint8ClampedArray(originalImage.data) };
+  const processingImage = ctx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
+  let raster = { width: processingImage.width, height: processingImage.height, data: new Uint8ClampedArray(processingImage.data) };
   let textObjects = [];
   let ocrWarning = '';
   const useOcr = $('#detectText')?.checked;
 
   if (useOcr) {
     try {
-      status.textContent = 'Detecting text with Tesseract.js…';
-      const recognized = await recognizeText(sourceCanvas, {
+      status.textContent = 'Detecting text at source resolution…';
+      const fullCanvas = await makeSourceResolutionCanvas(currentFile);
+      const fullCtx = fullCanvas.getContext('2d', { willReadFrequently: true });
+      const fullImage = fullCtx.getImageData(0, 0, fullCanvas.width, fullCanvas.height);
+      const recognized = await recognizeText(fullCanvas, {
         language: $('#ocrLanguage')?.value || 'eng',
         minConfidence: 55,
-        onProgress: (value, stage) => setProgress(0.04 + value * 0.28, stage)
+        onProgress: (value, stage) => setProgress(0.04 + value * 0.27, stage)
       });
-      textObjects = createTextObjects(recognized.words, raster, {
+      textObjects = createTextObjects(recognized.lines, fullImage, {
         originalWidth: originalSize.width,
         originalHeight: originalSize.height
       });
-      raster = maskDetectedText(raster, recognized.words);
-      setProgress(0.32, textObjects.length ? `Recovered ${textObjects.length} text object${textObjects.length === 1 ? '' : 's'}` : 'No confident text found');
+      const scaledLines = scaleOcrDetections(recognized.lines, raster.width / fullCanvas.width, raster.height / fullCanvas.height);
+      raster = maskDetectedText(raster, scaledLines, { dilation: 2 });
+      setProgress(0.32, textObjects.length ? `Recovered ${textObjects.length} text line${textObjects.length === 1 ? '' : 's'} with font fitting` : 'No confident text found');
     } catch (error) {
       ocrWarning = 'OCR unavailable; exported geometry only';
       console.warn(error);
@@ -371,6 +402,7 @@ objectFill.addEventListener('input', e => {
   const object = currentObjects.find(o => o.id === selectedObjectId);
   if (!object) return;
   object.fill = e.target.value;
+  if (object.type === 'line') object.stroke = e.target.value;
   renderPreview();
 });
 deleteObjectBtn.addEventListener('click', () => {

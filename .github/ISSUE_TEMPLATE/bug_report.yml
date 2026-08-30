@@ -1,0 +1,50 @@
+name: Bug report
+description: Report a reproducible problem in ClusterGlyph
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for helping improve ClusterGlyph. Please include enough detail to reproduce the issue.
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and version
+      placeholder: Chrome 151, Firefox 142, Safari 19, etc.
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: Windows 11, macOS, Linux, etc.
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the actual result and the expected result.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open ...
+        2. Select ...
+        3. Set clusters to ...
+        4. Click ...
+    validations:
+      required: true
+  - type: textarea
+    id: settings
+    attributes:
+      label: Vectorization settings
+      description: Include cluster count, resolution, simplification, minimum region, and geometry tolerance when relevant.
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context
+      description: Screenshots and small reproducible sample images are helpful.

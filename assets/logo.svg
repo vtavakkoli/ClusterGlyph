@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="ClusterGlyph logo">
+  <rect width="64" height="64" rx="16" fill="#171b22"/>
+  <circle cx="22" cy="21" r="10" fill="#b8ff5a"/>
+  <ellipse cx="43" cy="22" rx="9" ry="6" fill="#66e7ff"/>
+  <path d="M14 44L25 31l10 8 14-10-3 20H17Z" fill="#f4f7fb"/>
+</svg>

@@ -35,9 +35,10 @@ try {
   let responseMode = 'success';
   page.on('request', request => {
     if (/\/src\/ocr/.test(request.url())) ocrModules.push(request.url());
+    if (!request.url().startsWith(baseUrl)) external.push(request.url());
   });
-  await page.route('https://**', async route => {
-    external.push(route.request().url());
+  await page.route('**/*', async route => {
+    if (route.request().url().startsWith(baseUrl)) return route.continue();
     if (responseMode === 'fail') return route.abort('failed');
     if (!route.request().url().includes('tesseract.min.js')) return route.abort('failed');
     await route.fulfill({ contentType: 'text/javascript', body: `
@@ -132,6 +133,7 @@ try {
     await done();
     assert.match(await page.textContent('#status'), /review experimental text recovery/);
     assert.equal(await page.locator('#svgPreview text').count(), 1);
+    console.log('OCR request check:', JSON.stringify({ requests: external, text: await page.locator('#svgPreview text').textContent() }));
     assert.equal(await page.locator('#svgPreview text').textContent(), 'Test & <label>');
     assert.equal(external.length, 1);
     await page.uncheck('#detectText');

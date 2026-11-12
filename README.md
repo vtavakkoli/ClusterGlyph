@@ -18,6 +18,8 @@
 
 ClusterGlyph converts PNG, JPG, WebP, and other browser-readable raster images into editable SVG. By default, the entire image, including lettering, is segmented in perceptual color space and traced into editable polygons, circles, and ellipses.
 
+Download the result as **SVG or PNG**, including all current edits. PNG supports 1×, 2×, and 4× the original image dimensions. **Transparent** is the default output background; **Original** and **Custom color** are available for both formats.
+
 **Text detection is experimental and off by default.** Enable **Optional text recovery → Enable text detection** before vectorizing to try recovering words as native SVG `<text>` objects. Recognition, fonts, and placement are estimates and should be reviewed before exporting. The language selector is available only while text detection is enabled.
 
 > **Privacy by design:** raster pixels are processed in the browser and are not uploaded to a ClusterGlyph backend. The default geometry workflow makes no OCR downloads. Tesseract.js and language assets are requested from their configured CDN sources only when you run vectorization with experimental text detection enabled.
@@ -34,6 +36,9 @@ ClusterGlyph converts PNG, JPG, WebP, and other browser-readable raster images i
 | Geometry cleanup | Collinear cleanup + Ramer–Douglas–Peucker simplification |
 | Primitive recovery | Round regions can become native `<circle>` or `<ellipse>` |
 | In-browser editing | Original, Compare, and full SVG views; select, recolor, delete, and drag polygon vertices before export |
+| PNG export | Rasterizes the edited SVG at 1×, 2×, or 4× original size with the selected background |
+| Background | Transparent by default; retain the original or choose a custom color without re-vectorizing |
+| Edge cleanup | Small-region color merging, protected thin contours, optional curve smoothing, and tiny shared-edge overlaps |
 | Privacy | Raster image processing stays client-side |
 | Deployment | Static GitHub Pages application; no backend or API key required |
 
@@ -84,9 +89,14 @@ Photographs can also be vectorized, but high cluster counts and fine tracing set
 | Setting | Purpose |
 |---|---|
 | **Color clusters** | Exact target number, from 1 to 32, of perceptual Lab-space color groups |
-| **Processing resolution** | Long-edge raster resolution used for tracing and, when enabled, OCR |
+| **Processing resolution** | Long edge used for tracing and optional OCR; default 1600px, maximum 2400px; smaller images are not enlarged |
 | **Polygon simplification** | RDP epsilon; higher values reduce more vertices |
-| **Minimum region** | Filters isolated raster noise and tiny components |
+| **Minimum region** | Merges small connected regions into neighboring colors instead of deleting pixels; 1 retains every region |
+| **Smooth traced edges** | Rounds short raster steps and shallow curve segments with quadratic curves while retaining strong corners |
+| **Clean color speckles** | Removes isolated, low-contrast color labels while retaining contrasting thin lines |
+| **Close tiny gaps between colors** | Adds small same-color overlaps to reduce antialiasing seams between neighboring regions |
+| **Output background** | Transparent, Original, or Custom color; applies immediately to both exports |
+| **PNG size** | 1×, 2×, or 4× original dimensions, independent of processing resolution |
 | **Round-shape tolerance** | Controls circle/ellipse fitting strictness |
 | **Detect circles & ellipses** | Enables native SVG primitive recovery |
 | **Enable text detection — Experimental** | Off by default; runs Tesseract.js on demand and restores detected words as SVG `<text>` elements |
@@ -98,6 +108,12 @@ Photographs can also be vectorized, but high cluster counts and fine tracing set
 Use **Original** to inspect the input, **Compare** to move the raster/SVG divider, or **SVG · edit** to see and edit the entire vector image. Both layers fit the same preview area, including when the source raster is small or downscaled.
 
 Select objects in the preview or object selector. Click a palette swatch to select the first remaining object in that color cluster. Recolor, delete, or drag polygon vertices; **Reset edits** restores the conversion result. Object and text totals and SVG size update after edits.
+
+**Download PNG** renders the current export SVG, so selection outlines, vertex handles, the checkerboard, and the original raster comparison are not included. PNG starts with transparency and uses the chosen output background. Exports above 32 megapixels or 16,384px on either edge are rejected with a request to use a smaller scale.
+
+Background removal detects the dominant edge color and removes only matching regions connected to the image border. It works for colored backgrounds as well as white. Enclosed white icons, lettering, and panels remain intact. This is a border-based estimate rather than semantic object segmentation; use **Original** for images whose foreground touches most of the border. Background changes do not require another conversion.
+
+For diagrams and small lettering, use a resolution near the source size rather than 600px. Keep **Smooth traced edges** and **Close tiny gaps between colors** enabled for cleaner lines. Turn them off for pixel-art boundaries. Color clustering produces a reduced palette, so gradients remain an approximation.
 
 Conversion locks the input and settings until it finishes so files and results cannot overlap. Image-decoding and worker errors restore the controls for retry. If experimental OCR cannot run, tracing continues on the unmasked raster and the completion message explicitly reports geometry-only output.
 
@@ -173,6 +189,7 @@ Boundary edge graph → closed contours
 │   ├── app.js
 │   ├── ocr.js
 │   ├── ocr-loader.js
+│   ├── png-export.js
 │   ├── serializer.js
 │   ├── worker.js
 │   └── vectorizer.js
@@ -181,6 +198,8 @@ Boundary edge graph → closed contours
 │   │   └── smoke.mjs
 │   ├── text-ocr.test.js
 │   ├── ocr-loader.test.js
+│   ├── png-export.test.js
+│   ├── vector-quality.test.js
 │   └── vectorizer.test.js
 ├── .github/
 │   ├── workflows/
@@ -211,13 +230,17 @@ Sampled sRGB pixels are converted to CIE Lab. ClusterGlyph uses deterministic fa
 
 Color labels are only the segmentation stage. A connected-component pass then separates regions spatially, so two red objects that do not touch are exported as two independent vector objects even when both belong to the same color cluster.
 
+Before tracing, a local label cleanup can remove low-contrast speckles. Small connected regions are merged through their adjacency graph into a nearby color, taking color distance and shared boundary length into account. They are not discarded, which avoids introducing transparent holes in opaque foregrounds. Isolated details with no opaque neighbor are kept. Palette entries retain their original cluster IDs after cleanup.
+
 ### 5. Contour tracing and polygon optimization
 
 For each connected component, exposed raster-cell edges are emitted in a consistent orientation and chained into closed loops. Internal loops are retained so holes can be represented correctly.
 
 Raw raster contours may contain thousands of adjacent points. ClusterGlyph first removes collinear vertices, then applies closed-polygon Ramer–Douglas–Peucker simplification.
 
-Simple regions are serialized as editable SVG `<polygon>` elements. Regions with holes remain a single compound `<path fill-rule="evenodd">` to preserve topology.
+Simplification adapts to narrow contours and checks signed area, retrying with a smaller tolerance if a line or hole would collapse. Optional quadratic rounding smooths short raster steps and shallow curves; long, sharp corners remain intact. Small same-color strokes provide overlap at shared edges to reduce antialiasing cracks. Both cleanup features can be disabled.
+
+Sharp simple regions are serialized as editable SVG `<polygon>` elements. Smoothed regions and regions with holes use `<path fill-rule="evenodd">`. Their editable control-point rings remain in the object model.
 
 ### 6. Circle and ellipse recovery
 
@@ -263,8 +286,11 @@ The test suite covers core geometry and text-aware export behavior, including:
 - native SVG `<text>` serialization and XML escaping
 - text-mask dimension preservation
 - lazy OCR loading, shared downloads, download errors, retries, and timeout recovery
+- small-region merging without coverage holes, thin-line preservation, transparent input, and stable palette IDs
+- edge-connected background removal while retaining white foreground details
+- PNG scale and canvas-size limits
 
-Tests also run automatically on pull requests and pushes to `main`. Browser checks cover opt-in behavior, geometry export, OCR success/fallback with a deterministic recognition stub, editor interactions, input/worker errors, and responsive widths from 320px to 1440px. They verify integration behavior rather than OCR recognition accuracy. Desktop and mobile screenshots are saved as workflow artifacts.
+Tests also run automatically on pull requests and pushes to `main`. Browser checks cover PNG dimensions, current edits and alpha pixels, custom/original backgrounds, opt-in behavior, geometry export, OCR success/fallback with a deterministic recognition stub, editor interactions, input/worker errors, and responsive widths from 320px to 1440px. They verify integration behavior rather than OCR recognition accuracy. Desktop and mobile screenshots are saved as workflow artifacts.
 
 To run the optional browser checks locally (Playwright is a test tool, not an application dependency):
 

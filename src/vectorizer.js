@@ -1,3 +1,6 @@
+import { serializeObjectsToSvg } from './serializer.js';
+export { serializeObjectsToSvg } from './serializer.js';
+
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 export function rgbToLab(r, g, b) {
@@ -37,7 +40,7 @@ function samplePixels(data, maxSamples = 24000) {
 
 export function clusterColors(data, k = 8, iterations = 10) {
   const samples = samplePixels(data);
-  if (!samples.length) return { centroids: [], labels: new Int16Array(data.length / 4), palette: [] };
+  if (!samples.length) return { centroids: [], labels: new Int16Array(data.length / 4).fill(-1), palette: [] };
   k = clamp(Math.round(k), 1, Math.min(32, samples.length));
   const centroids = [samples[Math.floor(samples.length / 2)].lab.slice()];
   while (centroids.length < k) {
@@ -134,6 +137,118 @@ export function findComponents(labels, width, height, minArea) {
   return { components, componentMap };
 }
 
+// Suppress low-contrast color speckles without blurring contrasting thin strokes.
+export function cleanColorLabels(labels, width, height, palette) {
+  const colors = palette.map(p => rgbToLab(...p.color.match(/[a-f\d]{2}/gi).map(v => parseInt(v, 16))));
+  const out = new Int16Array(labels);
+  const counts = new Uint8Array(palette.length);
+  for (let y = 1; y < height - 1; y++) for (let x = 1; x < width - 1; x++) {
+    const i = y * width + x, label = labels[i];
+    if (label < 0) continue;
+    counts.fill(0);
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const neighbor = labels[i + dy * width + dx];
+      if (neighbor >= 0) counts[neighbor]++;
+    }
+    if (counts[label] > 2) continue;
+    let best = label;
+    for (let c = 0; c < counts.length; c++) if (counts[c] > counts[best]) best = c;
+    if (counts[best] >= 5 && dist3(colors[label], colors[best]) < 16 * 16) out[i] = best;
+  }
+  return out;
+}
+
+// Merge noise into an adjacent color instead of leaving unpainted holes.
+// Isolated details on a transparent raster are retained when no neighbor exists.
+export function mergeSmallRegions(labels, width, height, palette, minArea) {
+  if (minArea <= 1) return { labels, mergedPixels: 0 };
+  const { components, componentMap } = findComponents(labels, width, height, 1);
+  const parent = Int32Array.from(components, c => c.id);
+  const areas = Float64Array.from(components, c => c.area);
+  const adjacency = components.map(() => new Map());
+  const colors = palette.map(p => rgbToLab(...p.color.match(/[a-f\d]{2}/gi).map(v => parseInt(v, 16))));
+  const root = id => {
+    while (parent[id] !== id) { parent[id] = parent[parent[id]]; id = parent[id]; }
+    return id;
+  };
+  const connect = (a, b) => {
+    if (a < 0 || b < 0 || a === b) return;
+    adjacency[a].set(b, (adjacency[a].get(b) || 0) + 1);
+    adjacency[b].set(a, (adjacency[b].get(a) || 0) + 1);
+  };
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const i = y * width + x;
+    if (x + 1 < width) connect(componentMap[i], componentMap[i + 1]);
+    if (y + 1 < height) connect(componentMap[i], componentMap[i + width]);
+  }
+  for (const component of [...components].sort((a, b) => a.area - b.area)) {
+    const from = root(component.id);
+    if (from !== component.id || areas[from] >= minArea) continue;
+    let to = -1, bestScore = Infinity;
+    for (const [neighbor, sharedEdges] of adjacency[from]) {
+      const candidate = root(neighbor);
+      if (candidate === from) continue;
+      const distance = dist3(colors[components[from].label], colors[components[candidate].label]);
+      const score = distance / (1 + Math.log2(1 + sharedEdges));
+      if (score < bestScore) { bestScore = score; to = candidate; }
+    }
+    if (to < 0) continue;
+    parent[from] = to;
+    areas[to] += areas[from];
+    for (const [neighbor, sharedEdges] of adjacency[from]) {
+      const other = root(neighbor);
+      if (other === to) continue;
+      adjacency[to].set(other, (adjacency[to].get(other) || 0) + sharedEdges);
+      adjacency[other].delete(from);
+      adjacency[other].set(to, (adjacency[other].get(to) || 0) + sharedEdges);
+    }
+    adjacency[to].delete(from);
+    adjacency[from].clear();
+  }
+  const out = new Int16Array(labels);
+  let mergedPixels = 0;
+  for (let i = 0; i < out.length; i++) {
+    if (componentMap[i] < 0) continue;
+    out[i] = components[root(componentMap[i])].label;
+    if (out[i] !== labels[i]) mergedPixels++;
+  }
+  return { labels: out, mergedPixels };
+}
+
+function backgroundComponents(labels, componentMap, width, height, palette) {
+  const counts = new Uint32Array(palette.length);
+  const border = new Set();
+  for (let x = 0; x < width; x++) { border.add(x); border.add((height - 1) * width + x); }
+  for (let y = 0; y < height; y++) { border.add(y * width); border.add(y * width + width - 1); }
+  let opaque = 0, best = -1;
+  for (const i of border) if (labels[i] >= 0) {
+    opaque++;
+    const label = labels[i];
+    counts[label]++;
+    if (best < 0 || counts[label] > counts[best]) best = label;
+  }
+  if (best < 0 || counts[best] < opaque * 0.2) return new Set();
+  const colors = palette.map(p => rgbToLab(...p.color.match(/[a-f\d]{2}/gi).map(v => parseInt(v, 16))));
+  const allowed = colors.map(color => dist3(color, colors[best]) <= 12 * 12);
+  const seen = new Uint8Array(labels.length);
+  const queue = new Int32Array(labels.length);
+  let head = 0, tail = 0;
+  const visit = i => {
+    if (!seen[i] && labels[i] >= 0 && allowed[labels[i]]) { seen[i] = 1; queue[tail++] = i; }
+  };
+  for (const i of border) visit(i);
+  const ids = new Set();
+  while (head < tail) {
+    const i = queue[head++], x = i % width;
+    ids.add(componentMap[i]);
+    if (x > 0) visit(i - 1);
+    if (x + 1 < width) visit(i + 1);
+    if (i >= width) visit(i - width);
+    if (i + width < labels.length) visit(i + width);
+  }
+  return ids;
+}
+
 function pointKey(x, y) { return `${x},${y}`; }
 
 function buildContours(component, componentMap, width, height) {
@@ -228,24 +343,33 @@ export function simplifyClosedPolygon(points, epsilon = 1.5) {
   if (points.length <= 4 || epsilon <= 0) return removeCollinear(points);
   const pts = removeCollinear(points);
   if (pts.length <= 4) return pts;
-  let ia = 0, ib = 1, best = -1;
-  for (let i = 0; i < pts.length; i++) {
-    for (let j = i + 1; j < pts.length; j++) {
-      const dx = pts[i][0] - pts[j][0], dy = pts[i][1] - pts[j][1];
-      const d = dx * dx + dy * dy;
-      if (d > best) { best = d; ia = i; ib = j; }
-    }
-  }
+  const farthest = origin => {
+    let index = 0, distance = -1;
+    pts.forEach((p, i) => {
+      const d = (p[0] - pts[origin][0]) ** 2 + (p[1] - pts[origin][1]) ** 2;
+      if (d > distance) { distance = d; index = i; }
+    });
+    return index;
+  };
+  const ia = farthest(0), ib = farthest(ia);
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const [x, y] of pts) { minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); }
+  epsilon = Math.min(epsilon, (maxX - minX) / 4, (maxY - minY) / 4);
   const arc = (start, end) => {
     const arr = [pts[start]];
     let i = start;
     while (i !== end) { i = (i + 1) % pts.length; arr.push(pts[i]); }
     return arr;
   };
-  const a = rdpOpen(arc(ia, ib), epsilon);
-  const b = rdpOpen(arc(ib, ia), epsilon);
-  const merged = a.slice(0, -1).concat(b.slice(0, -1));
-  return removeCollinear(merged);
+  const originalArea = polygonArea(pts);
+  for (let attempt = 0; attempt < 5; attempt++, epsilon /= 2) {
+    const a = rdpOpen(arc(ia, ib), epsilon);
+    const b = rdpOpen(arc(ib, ia), epsilon);
+    const merged = removeCollinear(a.slice(0, -1).concat(b.slice(0, -1)));
+    const area = polygonArea(merged);
+    if (merged.length >= 3 && area * originalArea > 0 && Math.abs(area / originalArea - 1) <= 0.12) return merged;
+  }
+  return pts;
 }
 
 function polygonArea(points) {
@@ -264,55 +388,19 @@ export function detectRoundShape(points, tolerance = 0.08) {
   const rx = (maxX - minX) / 2, ry = (maxY - minY) / 2;
   if (rx < 2 || ry < 2) return null;
   const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
-  let err = 0;
+  let err = 0, maxError = 0;
   for (const [x, y] of points) {
     const nr = Math.sqrt(((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2);
     err += Math.abs(nr - 1);
+    maxError = Math.max(maxError, Math.abs(nr - 1));
   }
   err /= points.length;
-  if (err > tolerance) return null;
+  const areaRatio = Math.abs(polygonArea(points)) / (Math.PI * rx * ry);
+  if (err > tolerance || maxError > tolerance * 3 || Math.abs(areaRatio - 1) > 0.12) return null;
   const aspectDelta = Math.abs(rx - ry) / Math.max(rx, ry);
   return aspectDelta <= tolerance * 1.15
     ? { type: 'circle', cx, cy, r: (rx + ry) / 2, error: err }
     : { type: 'ellipse', cx, cy, rx, ry, error: err };
-}
-
-function fmt(v, precision) {
-  const p = Math.pow(10, precision);
-  const n = Math.round(v * p) / p;
-  return Number.isInteger(n) ? String(n) : String(n);
-}
-
-function pointsAttribute(points, precision) {
-  return points.map(([x, y]) => `${fmt(x, precision)},${fmt(y, precision)}`).join(' ');
-}
-
-function pathForRings(rings, precision) {
-  return rings.map(ring => {
-    if (!ring.length) return '';
-    const parts = [`M${fmt(ring[0][0], precision)} ${fmt(ring[0][1], precision)}`];
-    for (let i = 1; i < ring.length; i++) parts.push(`L${fmt(ring[i][0], precision)} ${fmt(ring[i][1], precision)}`);
-    parts.push('Z');
-    return parts.join('');
-  }).join('');
-}
-
-function objectMarkup(object, precision = 2) {
-  const common = `id="${object.id}" data-object-id="${object.id}" data-cluster="${object.cluster}" fill="${object.fill}"${object.opacity < 0.995 ? ` opacity="${fmt(object.opacity, 3)}"` : ''}`;
-  if (object.type === 'circle') {
-    return `<circle ${common} cx="${fmt(object.cx, precision)}" cy="${fmt(object.cy, precision)}" r="${fmt(object.r, precision)}"/>`;
-  }
-  if (object.type === 'ellipse') {
-    return `<ellipse ${common} cx="${fmt(object.cx, precision)}" cy="${fmt(object.cy, precision)}" rx="${fmt(object.rx, precision)}" ry="${fmt(object.ry, precision)}"/>`;
-  }
-  if (object.rings?.length > 1) {
-    return `<path ${common} d="${pathForRings(object.rings, precision)}" fill-rule="evenodd"/>`;
-  }
-  return `<polygon ${common} points="${pointsAttribute(object.rings?.[0] || object.points || [], precision)}"/>`;
-}
-
-export function serializeObjectsToSvg(objects, width, height, precision = 2) {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${fmt(width, precision)} ${fmt(height, precision)}" width="${fmt(width, precision)}" height="${fmt(height, precision)}">\n${objects.map(o => `  ${objectMarkup(o, precision)}`).join('\n')}\n</svg>`;
 }
 
 export function vectorizeImage(imageData, options = {}, progress = () => {}) {
@@ -329,8 +417,15 @@ export function vectorizeImage(imageData, options = {}, progress = () => {}) {
 
   progress(0.05, `Clustering into ${clusters} colors`);
   const clustered = clusterColors(data, clusters, options.clusterIterations ?? 9);
+  progress(0.3, 'Cleaning color regions');
+  const cleaned = options.cleanEdges === false ? clustered.labels : cleanColorLabels(clustered.labels, width, height, clustered.palette);
+  const merged = mergeSmallRegions(cleaned, width, height, clustered.palette, minArea);
+  clustered.labels = merged.labels;
+  clustered.palette.forEach(p => { p.count = 0; });
+  for (const label of clustered.labels) if (label >= 0) clustered.palette[label].count++;
   progress(0.35, 'Finding connected objects');
-  const { components, componentMap } = findComponents(clustered.labels, width, height, minArea);
+  const { components, componentMap } = findComponents(clustered.labels, width, height, 1);
+  const backgroundIds = backgroundComponents(clustered.labels, componentMap, width, height, clustered.palette);
 
   const objects = [];
   let pointsBefore = 0, pointsAfter = 0, circles = 0, ellipses = 0, compoundObjects = 0;
@@ -350,6 +445,10 @@ export function vectorizeImage(imageData, options = {}, progress = () => {}) {
       fill: palette.color,
       opacity: palette.alpha,
       area: component.area,
+      rawPoints: rawLoops.reduce((sum, loop) => sum + loop.length, 0),
+      isBackground: backgroundIds.has(component.id),
+      seamWidth: options.closeGaps === false ? 0 : 0.7 * Math.max(sx, sy),
+      curveSmoothing: options.smoothContours === false ? 0 : 0.7 * Math.max(sx, sy),
       sourceBounds: [component.minX, component.minY, component.maxX, component.maxY]
     };
 
@@ -373,7 +472,7 @@ export function vectorizeImage(imageData, options = {}, progress = () => {}) {
   });
 
   progress(0.95, 'Serializing editable SVG');
-  const svg = serializeObjectsToSvg(objects, originalWidth, originalHeight, precision);
+  const svg = serializeObjectsToSvg(objects, originalWidth, originalHeight, precision, options);
   progress(1, 'Done');
   return {
     svg,
@@ -381,11 +480,12 @@ export function vectorizeImage(imageData, options = {}, progress = () => {}) {
     height: originalHeight,
     precision,
     objects,
-    palette: clustered.palette.filter(p => p.count > 0),
+    palette: clustered.palette.map((p, cluster) => ({ ...p, cluster })).filter(p => p.count > 0),
     stats: {
       requestedClusters: clusters,
       clusters: clustered.palette.filter(p => p.count > 0).length,
       components: components.length,
+      mergedPixels: merged.mergedPixels,
       shapes: objects.length,
       polygons: objects.filter(o => o.type === 'polygon').length,
       compoundObjects,

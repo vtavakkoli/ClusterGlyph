@@ -35,10 +35,10 @@ try {
   let responseMode = 'success';
   page.on('request', request => {
     if (/\/src\/ocr/.test(request.url())) ocrModules.push(request.url());
-    if (!request.url().startsWith(baseUrl)) external.push(request.url());
+    if (/^https?:/.test(request.url()) && !request.url().startsWith(baseUrl)) external.push(request.url());
   });
   await page.route('**/*', async route => {
-    if (route.request().url().startsWith(baseUrl)) return route.continue();
+    if (route.request().url().startsWith(baseUrl) || /^(blob|data):/.test(route.request().url())) return route.continue();
     if (responseMode === 'fail') return route.abort('failed');
     if (!route.request().url().includes('tesseract.min.js')) return route.abort('failed');
     await route.fulfill({ contentType: 'text/javascript', body: `
@@ -74,10 +74,38 @@ try {
     });
     assert.ok(delta < 1.5, `Preview alignment delta: ${delta}`);
   }
+  async function pngExport() {
+    const downloadEvent = page.waitForEvent('download');
+    await page.click('#downloadPngBtn');
+    const downloaded = await downloadEvent;
+    assert.match(downloaded.suggestedFilename(), /\.png$/);
+    const data = await fs.readFile(await downloaded.path());
+    assert.deepEqual([...data.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+    const pixels = await page.evaluate(async encoded => {
+      const image = new Image();
+      image.src = `data:image/png;base64,${encoded}`;
+      await image.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = image.width; canvas.height = image.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(image, 0, 0);
+      const rgba = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+      let recolored = 0, transparent = 0;
+      for (let i = 0; i < rgba.length; i += 4) {
+        if (rgba[i] === 18 && rgba[i + 1] === 52 && rgba[i + 2] === 86 && rgba[i + 3] === 255) recolored++;
+        if (!rgba[i + 3]) transparent++;
+      }
+      return { width: canvas.width, height: canvas.height, corner: [...rgba.subarray(0, 4)], recolored, transparent };
+    }, data.toString('base64'));
+    await page.waitForFunction(() => !document.querySelector('#downloadPngBtn').disabled);
+    return pixels;
+  }
   try {
     await page.goto(baseUrl);
     assert.equal(await page.isChecked('#detectText'), false);
     assert.equal(await page.isDisabled('#ocrLanguage'), true);
+    assert.equal(await page.inputValue('#backgroundMode'), 'transparent');
+    assert.equal(await page.isDisabled('#backgroundColor'), true);
     assert.equal(external.length, 0);
     assert.equal(ocrModules.length, 0);
     console.log('PASS: OCR is off on startup; no OCR library or module downloads');
@@ -103,6 +131,22 @@ try {
     await page.click('button[data-view="vector"]');
     assert.equal(await page.isDisabled('#compare'), true);
     const objectCount = Number(await page.textContent('#objectCountValue'));
+    const smoothShape = page.locator('#svgPreview path[data-object-id][d*="Q"]').first();
+    const smoothId = await smoothShape.getAttribute('data-object-id');
+    await page.selectOption('#objectSelect', smoothId);
+    const beforeDrag = await page.locator(`[data-object-id="${smoothId}"]`).getAttribute('d');
+    const handle = page.locator('.vertex-handles circle').first();
+    await handle.scrollIntoViewIfNeeded();
+    const handleBox = await handle.boundingBox();
+    await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(handleBox.x + handleBox.width / 2 + 8, handleBox.y + handleBox.height / 2 + 5);
+    await page.mouse.up();
+    const afterDrag = await page.locator(`[data-object-id="${smoothId}"]`).getAttribute('d');
+    assert.notEqual(afterDrag, beforeDrag);
+    assert.match(afterDrag, /Q/);
+    await page.click('#resetEditsBtn');
+    console.log('PASS: smoothed contours retain editable vertex handles');
     await page.evaluate(() => { const c = document.querySelector('#objectFill'); c.value = '#123456'; c.dispatchEvent(new Event('input', {bubbles: true})); });
     const downloadEvent = page.waitForEvent('download');
     await page.click('#downloadBtn');
@@ -114,6 +158,28 @@ try {
     assert.equal(Number(await page.textContent('#objectCountValue')), objectCount - 1);
     await page.click('#resetEditsBtn');
     assert.equal(Number(await page.textContent('#objectCountValue')), objectCount);
+
+    await page.evaluate(() => { const c = document.querySelector('#objectFill'); c.value = '#123456'; c.dispatchEvent(new Event('input', {bubbles: true})); });
+    await page.selectOption('#pngScale', '2');
+    const transparentPng = await pngExport();
+    assert.deepEqual([transparentPng.width, transparentPng.height], [2400, 1200]);
+    assert.equal(transparentPng.corner[3], 0);
+    assert.ok(transparentPng.recolored > 100, 'PNG must include the current vector edits');
+    await page.selectOption('#pngScale', '1');
+    await page.selectOption('#backgroundMode', 'custom');
+    await page.evaluate(() => { const c = document.querySelector('#backgroundColor'); c.value = '#334455'; c.dispatchEvent(new Event('input', {bubbles: true})); });
+    assert.equal(await page.isDisabled('#backgroundColor'), false);
+    const customPng = await pngExport();
+    assert.deepEqual(customPng.corner, [51, 68, 85, 255]);
+    assert.equal(customPng.transparent, 0);
+    await page.selectOption('#backgroundMode', 'original');
+    const originalPng = await pngExport();
+    assert.deepEqual(originalPng.corner, [255, 255, 255, 255]);
+    assert.equal(originalPng.transparent, 0);
+    await page.selectOption('#backgroundMode', 'transparent');
+    await page.click('#resetEditsBtn');
+    console.log('PASS: PNG export preserves vector edits, transparency, scale, and custom/original backgrounds');
+
     await page.evaluate(() => { navigator.clipboard.writeText = async () => { throw Error('denied'); }; });
     await page.click('#copyBtn');
     assert.match(await page.textContent('#status'), /Clipboard unavailable/);

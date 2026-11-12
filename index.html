@@ -114,7 +114,7 @@
           <span><b>Processing resolution</b><small>Long edge used for tracing; higher keeps more detail</small></span>
           <output id="maxDimValue"></output>
         </label>
-        <input id="maxDim" type="range" min="180" max="1000" step="20" value="600" />
+        <input id="maxDim" type="range" min="180" max="2400" step="20" value="1600" />
 
         <label class="control-row" for="simplify">
           <span><b>Polygon simplification</b><small>Higher = fewer points</small></span>
@@ -123,7 +123,7 @@
         <input id="simplify" type="range" min="0" max="6" step="0.1" value="1.5" />
 
         <label class="control-row" for="minArea">
-          <span><b>Minimum region</b><small>Discard isolated raster noise</small></span>
+          <span><b>Minimum region</b><small>Merge small regions into neighboring colors; keep 1 to retain all regions</small></span>
           <output id="minAreaValue"></output>
         </label>
         <input id="minArea" type="range" min="1" max="300" value="8" />
@@ -145,6 +145,25 @@
             </select>
           </label>
         </div>
+
+        <div class="cleanup-settings">
+          <label class="check"><input id="smoothContours" type="checkbox" checked /><span>Smooth traced edges</span></label>
+          <label class="check"><input id="cleanEdges" type="checkbox" checked /><span>Clean color speckles</span></label>
+          <label class="check"><input id="closeGaps" type="checkbox" checked /><span>Close tiny gaps between colors</span></label>
+        </div>
+
+        <fieldset class="background-settings" aria-describedby="backgroundHelp">
+          <legend>Output background</legend>
+          <label for="backgroundMode">Background
+            <select id="backgroundMode">
+              <option value="transparent" selected>Transparent</option>
+              <option value="original">Original</option>
+              <option value="custom">Custom color</option>
+            </select>
+          </label>
+          <label for="backgroundColor">Background color <input id="backgroundColor" type="color" value="#18212a" disabled /></label>
+          <p id="backgroundHelp">Transparent removes the background connected to the image edges. Enclosed white details stay intact. Choose Original to keep the complete image. Applies to SVG and PNG.</p>
+        </fieldset>
 
         <fieldset class="experimental-settings" aria-describedby="ocrHelp">
           <legend>Optional text recovery <span class="experimental-badge">Experimental</span></legend>
@@ -197,8 +216,19 @@
 
         <div id="palette" class="palette" aria-label="Detected color palette"></div>
 
+        <div class="export-options">
+          <label for="pngScale">PNG size
+            <select id="pngScale" disabled>
+              <option value="1" selected>1× original</option>
+              <option value="2">2× original</option>
+              <option value="4">4× original</option>
+            </select>
+          </label>
+          <span id="pngSize">Uses the edited SVG and output background</span>
+        </div>
         <div class="actions">
           <button id="downloadBtn" class="primary" disabled>Download SVG</button>
+          <button id="downloadPngBtn" class="secondary" disabled>Download PNG</button>
           <button id="copyBtn" class="secondary" disabled>Copy SVG</button>
         </div>
 

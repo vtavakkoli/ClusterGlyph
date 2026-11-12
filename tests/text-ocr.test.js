@@ -1,7 +1,31 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { serializeObjectsToSvg } from '../src/serializer.js';
-import { normalizeOcrWords, createTextObjects, maskDetectedText } from '../src/ocr.js';
+import { recognizeText, normalizeOcrWords, createTextObjects, maskDetectedText } from '../src/ocr.js';
+
+test('passes the selected language to OCR and filters its returned words', async t => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'Tesseract');
+  t.after(() => {
+    if (descriptor) Object.defineProperty(globalThis, 'Tesseract', descriptor);
+    else delete globalThis.Tesseract;
+  });
+  const source = {};
+  const progress = [];
+  globalThis.Tesseract = {
+    async recognize(actualSource, language, { logger }) {
+      assert.equal(actualSource, source);
+      assert.equal(language, 'eng+deu');
+      logger({ progress: 0.5, status: 'Recognizing text' });
+      return { data: { words: [
+        { text: 'Hallo', confidence: 95, bbox: { x0: 1, y0: 1, x1: 30, y1: 12 } },
+        { text: 'noise', confidence: 10, bbox: { x0: 1, y0: 15, x1: 30, y1: 28 } }
+      ] } };
+    }
+  };
+  const result = await recognizeText(source, { language: 'eng+deu', onProgress: (...values) => progress.push(values) });
+  assert.deepEqual(result.words.map(word => word.text), ['Hallo']);
+  assert.deepEqual(progress.at(-1), [0.5, 'Recognizing text']);
+});
 
 test('serializes OCR output as native SVG text', () => {
   const svg = serializeObjectsToSvg([{

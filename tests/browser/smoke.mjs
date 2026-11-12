@@ -42,7 +42,6 @@ try {
     if (!route.request().url().includes('tesseract.min.js')) return route.abort('failed');
     await route.fulfill({ contentType: 'text/javascript', body: `
       globalThis.Tesseract = { recognize: async (source, language, options) => {
-        globalThis.lastOcrLanguage = language;
         options.logger({progress: 0.5, status: 'Recognizing test words'});
         await new Promise(resolve => setTimeout(resolve, 150));
         return {data: {words: [{text: 'Test & <label>', confidence: 99, bbox: {x0: 10, y0: 10, x1: 70, y1: 30}}]}};
@@ -123,11 +122,17 @@ try {
     assert.equal(await page.isDisabled('#ocrLanguage'), false);
     assert.equal(external.length, 0);
     await page.selectOption('#ocrLanguage', 'eng+deu');
-    await page.click('#runBtn');
+    const locked = await page.evaluate(() => {
+      const run = document.querySelector('#runBtn');
+      run.click();
+      run.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      return ['#runBtn', '#file', '#detectText', '#ocrLanguage'].every(selector => document.querySelector(selector).disabled);
+    });
+    assert.equal(locked, true);
     await done();
     assert.match(await page.textContent('#status'), /review experimental text recovery/);
     assert.equal(await page.locator('#svgPreview text').count(), 1);
-    assert.equal(await page.evaluate(() => globalThis.lastOcrLanguage), 'eng+deu');
+    assert.equal(await page.locator('#svgPreview text').textContent(), 'Test & <label>');
     assert.equal(external.length, 1);
     await page.uncheck('#detectText');
     await page.click('#runBtn');
@@ -137,7 +142,7 @@ try {
     assert.match(await page.textContent('#status'), /geometry only/);
     console.log('PASS: checkbox alone does not download; opt-in text export and opt-out work');
 
-    await page.locator('.experimental-settings').scrollIntoViewIfNeeded();
+    await page.evaluate(() => scrollTo({ top: 0, behavior: 'instant' }));
     await page.screenshot({ path: path.join(artifacts, 'desktop.png'), fullPage: true });
     for (const width of [1024, 768, 390, 320]) {
       await page.setViewportSize({width, height: 1000});
@@ -145,7 +150,7 @@ try {
       assert.ok(overflow <= 1, `Page overflow at ${width}px: ${overflow}`);
     }
     await page.setViewportSize({width: 390, height: 1000});
-    await page.locator('.experimental-settings').scrollIntoViewIfNeeded();
+    await page.evaluate(() => scrollTo({ top: 0, behavior: 'instant' }));
     await page.screenshot({ path: path.join(artifacts, 'mobile.png'), fullPage: true });
     await checkAlignment();
     console.log('PASS: responsive layout at 1440, 1024, 768, 390 and 320 pixels');

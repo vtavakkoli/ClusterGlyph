@@ -28,7 +28,9 @@ export function pathForRings(rings, precision = 2, smoothing = 0) {
         const a = Math.hypot(previous[0] - x, previous[1] - y), b = Math.hypot(next[0] - x, next[1] - y);
         const turn = a && b ? Math.acos(Math.max(-1, Math.min(1, ((x - previous[0]) * (next[0] - x) + (y - previous[1]) * (next[1] - y)) / (a * b)))) : 0;
         // Keep real corners. Round short raster steps and shallow curve segments.
-        const cut = turn > Math.PI / 3 && Math.min(a, b) > smoothing * 2 ? 0 : Math.min(smoothing, a * 0.45, b * 0.45);
+        const sharp = turn > Math.PI * 5 / 12;
+        const cut = sharp && Math.min(a, b) > smoothing * 2 ? 0
+          : sharp ? Math.min(smoothing, a * 0.45, b * 0.45) : Math.min(a, b) * 0.45;
         return { point: [x, y], entry: [x + (previous[0] - x) * cut / (a || 1), y + (previous[1] - y) * cut / (a || 1)], exit: [x + (next[0] - x) * cut / (b || 1), y + (next[1] - y) * cut / (b || 1)], cut };
       });
       const xy = point => `${fmt(point[0], precision)} ${fmt(point[1], precision)}`;

@@ -1,5 +1,4 @@
 import { serializeObjectsToSvg } from './serializer.js';
-import { recognizeText, createTextObjects, maskDetectedText } from './ocr.js';
 
 const $ = (s) => document.querySelector(s);
 const drop = $('#drop');
@@ -27,6 +26,10 @@ const deleteObjectBtn = $('#deleteObjectBtn');
 const resetEditsBtn = $('#resetEditsBtn');
 const clustersRange = $('#clusters');
 const clustersNumber = $('#clustersNumber');
+const detectText = $('#detectText');
+const ocrLanguage = $('#ocrLanguage');
+const compareStage = $('.compare-stage');
+const previewModes = document.querySelectorAll('.preview-modes button');
 
 let currentFile = null;
 let currentSVG = '';
@@ -36,6 +39,41 @@ let selectedObjectId = null;
 let currentPrecision = 2;
 let currentVectorSize = { width: 0, height: 0 };
 let originalSize = { width: 0, height: 0 };
+let busy = false;
+
+function syncTextDetection() {
+  ocrLanguage.disabled = busy || !detectText.checked;
+  $('#ocrMode').textContent = detectText.checked
+    ? 'Experimental OCR · downloads recognition assets when you vectorize'
+    : 'Geometry only · no text recognition downloads';
+}
+detectText.addEventListener('change', syncTextDetection);
+syncTextDetection();
+
+function setBusy(value) {
+  busy = value;
+  document.querySelectorAll('.controls input, .controls select, #browseBtn').forEach(el => { el.disabled = value; });
+  syncTextDetection();
+  runBtn.disabled = value || !currentFile;
+  downloadBtn.disabled = value || !currentSVG;
+  copyBtn.disabled = value || !currentSVG;
+  resetEditsBtn.disabled = value || !currentSVG;
+  objectSelect.disabled = value || !currentObjects.length;
+  editorFields.inert = value;
+  paletteEl.inert = value;
+  svgPreview.inert = value;
+  previewModes.forEach(button => { button.disabled = value || !currentSVG; });
+  $('#compare').disabled = value || !currentSVG || compareStage.dataset.view !== 'compare';
+  drop.setAttribute('aria-disabled', String(value));
+  $('.workspace').setAttribute('aria-busy', String(value));
+}
+
+function setPreviewMode(mode) {
+  compareStage.dataset.view = mode;
+  previewModes.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.view === mode)));
+  $('#compare').disabled = busy || !currentSVG || mode !== 'compare';
+}
+previewModes.forEach(button => button.addEventListener('click', () => setPreviewMode(button.dataset.view)));
 
 const bindings = [
   ['maxDim', 'maxDimValue', v => `${v}px`],
@@ -49,14 +87,14 @@ for (const [id, out, format] of bindings) {
   el.addEventListener('input', update); update();
 }
 
-function syncClusters(value, source) {
+function syncClusters(value) {
   const v = Math.max(1, Math.min(32, Math.round(Number(value) || 1)));
-  if (source !== clustersRange) clustersRange.value = v;
-  if (source !== clustersNumber) clustersNumber.value = v;
+  clustersRange.value = v;
+  clustersNumber.value = v;
   $('#clustersValue').textContent = `${v} colors`;
 }
-clustersRange.addEventListener('input', e => syncClusters(e.target.value, clustersRange));
-clustersNumber.addEventListener('input', e => syncClusters(e.target.value, clustersNumber));
+clustersRange.addEventListener('input', e => syncClusters(e.target.value));
+clustersNumber.addEventListener('input', e => syncClusters(e.target.value));
 syncClusters(clustersRange.value);
 
 function humanBytes(bytes) {
@@ -93,26 +131,48 @@ function resetOutput() {
   editorEmpty.hidden = false;
   editorFields.hidden = true;
   resetEditsBtn.disabled = true;
+  objectSelect.disabled = true;
+  previewModes.forEach(button => { button.disabled = true; });
+  setPreviewMode('original');
+}
+
+async function drawSource(file, maxDim) {
+  const bitmap = await createImageBitmap(file);
+  try {
+    originalSize = { width: bitmap.width, height: bitmap.height };
+    const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+    sourceCanvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    sourceCanvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const ctx = sourceCanvas.getContext('2d', { willReadFrequently: true });
+    ctx.clearRect(0, 0, sourceCanvas.width, sourceCanvas.height);
+    ctx.drawImage(bitmap, 0, 0, sourceCanvas.width, sourceCanvas.height);
+  } finally {
+    bitmap.close();
+  }
 }
 
 async function loadFile(file) {
-  if (!file || !file.type.startsWith('image/')) return;
-  currentFile = file;
-  resetOutput();
-  const bitmap = await createImageBitmap(file);
-  originalSize = { width: bitmap.width, height: bitmap.height };
-  const max = Number($('#maxDim').value);
-  const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
-  sourceCanvas.width = Math.max(1, Math.round(bitmap.width * scale));
-  sourceCanvas.height = Math.max(1, Math.round(bitmap.height * scale));
-  const ctx = sourceCanvas.getContext('2d', { willReadFrequently: true });
-  ctx.clearRect(0, 0, sourceCanvas.width, sourceCanvas.height);
-  ctx.drawImage(bitmap, 0, 0, sourceCanvas.width, sourceCanvas.height);
-  bitmap.close();
-  $('#fileMeta').textContent = `${file.name} · ${originalSize.width}×${originalSize.height} · ${humanBytes(file.size)}`;
-  runBtn.disabled = false;
-  status.textContent = 'Ready to vectorize';
-  setProgress(0, 'Ready');
+  if (!file || busy) return;
+  if (!file.type.startsWith('image/') && !/\.(png|jpe?g|webp|gif|bmp|avif)$/i.test(file.name)) {
+    status.textContent = 'Choose a supported image such as PNG, JPG, or WebP.';
+    return;
+  }
+  setBusy(true);
+  status.textContent = 'Opening image…';
+  try {
+    await drawSource(file, Number($('#maxDim').value));
+    currentFile = file;
+    resetOutput();
+    $('#fileMeta').textContent = `${file.name} · ${originalSize.width}×${originalSize.height} · ${humanBytes(file.size)}`;
+    status.textContent = 'Ready to vectorize';
+    setProgress(0, 'Ready');
+  } catch (error) {
+    status.textContent = 'Could not open this image. Try a valid PNG, JPG, or WebP file.';
+    console.warn('Image loading failed:', error);
+  } finally {
+    input.value = ''; // Allow selecting the same file again after an error.
+    setBusy(false);
+  }
 }
 
 function options() {
@@ -139,6 +199,10 @@ function updateExportSvg() {
   const bytes = new TextEncoder().encode(currentSVG).length;
   const svgSize = $('#svgSizeValue');
   if (svgSize) svgSize.textContent = humanBytes(bytes);
+  const objectCount = $('#objectCountValue');
+  const textCount = $('#textCountValue');
+  if (objectCount) objectCount.textContent = currentObjects.length;
+  if (textCount) textCount.textContent = currentObjects.filter(object => object.type === 'text').length;
   return bytes;
 }
 
@@ -150,8 +214,9 @@ function objectLabel(object, index) {
 function renderObjectOptions() {
   const previous = selectedObjectId;
   objectSelect.innerHTML = currentObjects.length
-    ? currentObjects.map((o, i) => `<option value="${escapeHtml(o.id)}">${escapeHtml(objectLabel(o, i))}</option>`).join('')
+    ? '<option value="">Select an object</option>' + currentObjects.map((o, i) => `<option value="${escapeHtml(o.id)}">${escapeHtml(objectLabel(o, i))}</option>`).join('')
     : '<option value="">No objects</option>';
+  objectSelect.disabled = busy || !currentObjects.length;
   if (previous && currentObjects.some(o => o.id === previous)) objectSelect.value = previous;
 }
 
@@ -260,91 +325,100 @@ function startVertexDrag(event) {
   handle.addEventListener('pointercancel', up);
 }
 
-function renderResult(result, textObjects = [], ocrWarning = '') {
+function renderResult(result, { textObjects = [], ocrWarning = '', useOcr = false } = {}) {
   currentVectorSize = { width: result.width, height: result.height };
   currentPrecision = result.precision;
   currentObjects = deepCopy([...result.objects, ...textObjects]);
   originalObjects = deepCopy(currentObjects);
   selectedObjectId = currentObjects[0]?.id || null;
   renderPreview();
-  downloadBtn.disabled = false;
-  copyBtn.disabled = false;
-  resetEditsBtn.disabled = false;
-  paletteEl.innerHTML = result.palette.map((p, i) => `<button class="swatch" data-cluster="${i}" title="Cluster ${i + 1}: ${p.color}" style="--swatch:${p.color}"></button>`).join('');
+  setPreviewMode('compare');
+  paletteEl.innerHTML = result.palette.map((p, i) => `<button type="button" class="swatch" data-cluster="${i}" aria-label="Select an object in cluster ${i + 1}, ${p.color}" title="Cluster ${i + 1}: ${p.color}" style="--swatch:${p.color}"></button>`).join('');
   const s = result.stats;
   const outputBytes = new TextEncoder().encode(currentSVG).length;
   const items = [
-    ['Clusters', `${s.clusters}/${s.requestedClusters}`], ['Objects', currentObjects.length], ['Text', textObjects.length], ['Polygons', s.polygons], ['Circles', s.circles], ['Ellipses', s.ellipses],
+    ['Clusters', `${s.clusters}/${s.requestedClusters}`], ['Objects', currentObjects.length, 'objectCountValue'], ['Text', textObjects.length, 'textCountValue'], ['Polygons', s.polygons], ['Circles', s.circles], ['Ellipses', s.ellipses],
     ['Points', `${s.pointsBefore.toLocaleString()} → ${s.pointsAfter.toLocaleString()}`],
     ['Reduction', `${Math.max(0, s.reduction * 100).toFixed(1)}%`], ['SVG size', humanBytes(outputBytes), 'svgSizeValue']
   ];
   statsEl.innerHTML = items.map(([k, v, id]) => `<div class="stat"><span>${k}</span><strong${id ? ` id="${id}"` : ''}>${v}</strong></div>`).join('');
-  status.textContent = ocrWarning ? `Vectorization complete · ${ocrWarning}` : 'Vectorization complete — shapes and text are editable';
+  status.textContent = ocrWarning ? `Complete · ${ocrWarning}`
+    : useOcr ? textObjects.length ? 'Complete · review experimental text recovery' : 'Complete · no confident text found'
+    : 'Complete · geometry only';
+}
+
+function traceRaster(raster, settings, base) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+    const finish = (error, result) => {
+      worker.terminate();
+      if (error) reject(error);
+      else resolve(result);
+    };
+    worker.onmessage = ({ data: msg }) => {
+      if (msg.type === 'progress') setProgress(base + msg.value * (1 - base), msg.stage);
+      if (msg.type === 'result') finish(null, msg.result);
+      if (msg.type === 'error') finish(new Error(msg.message));
+    };
+    worker.onerror = e => finish(new Error(e.message || 'Could not start the tracing worker.'));
+    worker.onmessageerror = () => finish(new Error('Could not read the tracing result.'));
+    try {
+      worker.postMessage({ width: raster.width, height: raster.height, buffer: raster.data.buffer, options: settings }, [raster.data.buffer]);
+    } catch (error) {
+      finish(error);
+    }
+  });
 }
 
 async function vectorize() {
-  if (!currentFile) return;
-  runBtn.disabled = true;
-  downloadBtn.disabled = true;
-  copyBtn.disabled = true;
+  if (!currentFile || busy) return;
+  const useOcr = detectText.checked;
+  const language = ocrLanguage.value;
+  const settings = options();
+  setBusy(true);
   setProgress(0.02, 'Preparing image');
   status.textContent = 'Processing locally in your browser…';
-
-  await loadFile(currentFile);
-  runBtn.disabled = true;
-  const ctx = sourceCanvas.getContext('2d', { willReadFrequently: true });
-  const originalImage = ctx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
-  let raster = { width: originalImage.width, height: originalImage.height, data: new Uint8ClampedArray(originalImage.data) };
-  let textObjects = [];
-  let ocrWarning = '';
-  const useOcr = $('#detectText')?.checked;
-
-  if (useOcr) {
-    try {
-      status.textContent = 'Detecting text with Tesseract.js…';
-      const recognized = await recognizeText(sourceCanvas, {
-        language: $('#ocrLanguage')?.value || 'eng',
-        minConfidence: 55,
-        onProgress: (value, stage) => setProgress(0.04 + value * 0.28, stage)
-      });
-      textObjects = createTextObjects(recognized.words, raster, {
-        originalWidth: originalSize.width,
-        originalHeight: originalSize.height
-      });
-      raster = maskDetectedText(raster, recognized.words);
-      setProgress(0.32, textObjects.length ? `Recovered ${textObjects.length} text object${textObjects.length === 1 ? '' : 's'}` : 'No confident text found');
-    } catch (error) {
-      ocrWarning = 'OCR unavailable; exported geometry only';
-      console.warn(error);
-      setProgress(0.32, 'OCR skipped');
+  try {
+    await drawSource(currentFile, Number($('#maxDim').value));
+    const ctx = sourceCanvas.getContext('2d', { willReadFrequently: true });
+    const image = ctx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
+    let raster = { width: image.width, height: image.height, data: new Uint8ClampedArray(image.data) };
+    let textObjects = [];
+    let ocrWarning = '';
+    if (useOcr) {
+      try {
+        status.textContent = 'Running experimental text detection…';
+        const { recognizeText, createTextObjects, maskDetectedText } = await import('./ocr.js');
+        const recognized = await recognizeText(sourceCanvas, {
+          language,
+          minConfidence: 55,
+          onProgress: (value, stage) => setProgress(0.04 + value * 0.28, stage)
+        });
+        const recoveredText = createTextObjects(recognized.words, raster, {
+          originalWidth: originalSize.width,
+          originalHeight: originalSize.height
+        });
+        // Commit text and masking together so a failed OCR stage cannot duplicate letters.
+        const maskedRaster = maskDetectedText(raster, recognized.words);
+        textObjects = recoveredText;
+        raster = maskedRaster;
+        setProgress(0.32, textObjects.length ? `Recovered ${textObjects.length} text objects` : 'No confident text found');
+      } catch (error) {
+        ocrWarning = 'text detection failed; geometry only';
+        console.warn('Experimental text detection failed:', error);
+        setProgress(0.32, 'Text recovery skipped');
+      }
     }
+    status.textContent = 'Tracing vector shapes…';
+    const result = await traceRaster(raster, settings, useOcr ? 0.32 : 0.02);
+    renderResult(result, { textObjects, ocrWarning, useOcr });
+    setProgress(1, ocrWarning ? 'Done · text recovery skipped' : 'Done');
+  } catch (error) {
+    status.textContent = `Could not vectorize: ${error.message || 'please try again'}`;
+    progressText.textContent = 'Conversion failed · try again';
+  } finally {
+    setBusy(false);
   }
-
-  const worker = new Worker('./src/worker.js', { type: 'module' });
-  const base = useOcr ? 0.32 : 0.02;
-  const span = 1 - base;
-
-  worker.onmessage = (event) => {
-    const msg = event.data;
-    if (msg.type === 'progress') setProgress(base + msg.value * span, msg.stage);
-    if (msg.type === 'result') {
-      renderResult(msg.result, textObjects, ocrWarning);
-      setProgress(1, 'Done');
-      runBtn.disabled = false;
-      worker.terminate();
-    }
-    if (msg.type === 'error') {
-      status.textContent = `Error: ${msg.message}`;
-      runBtn.disabled = false;
-      worker.terminate();
-    }
-  };
-  worker.onerror = (e) => {
-    status.textContent = `Worker error: ${e.message}`;
-    runBtn.disabled = false;
-    worker.terminate();
-  };
-  worker.postMessage({ width: raster.width, height: raster.height, buffer: raster.data.buffer, options: options() }, [raster.data.buffer]);
 }
 
 function downloadSVG() {
@@ -360,10 +434,13 @@ function downloadSVG() {
 
 async function copySVG() {
   updateExportSvg();
-  await navigator.clipboard.writeText(currentSVG);
-  const old = copyBtn.textContent;
-  copyBtn.textContent = 'Copied';
-  setTimeout(() => copyBtn.textContent = old, 1200);
+  try {
+    await navigator.clipboard.writeText(currentSVG);
+    copyBtn.textContent = 'Copied';
+    setTimeout(() => { copyBtn.textContent = 'Copy SVG'; }, 1200);
+  } catch {
+    status.textContent = 'Clipboard unavailable. Use Download SVG to save your result.';
+  }
 }
 
 objectSelect.addEventListener('change', e => selectObject(e.target.value || null));
@@ -383,6 +460,15 @@ resetEditsBtn.addEventListener('click', () => {
   currentObjects = deepCopy(originalObjects);
   selectedObjectId = currentObjects[0]?.id || null;
   renderPreview();
+});
+paletteEl.addEventListener('click', e => {
+  const swatch = e.target.closest('[data-cluster]');
+  if (!swatch) return;
+  const object = currentObjects.find(o => o.cluster === Number(swatch.dataset.cluster));
+  if (object) {
+    selectObject(object.id);
+    setPreviewMode('vector');
+  }
 });
 
 input.addEventListener('change', () => loadFile(input.files[0]));

@@ -1,3 +1,5 @@
+import { loadTesseract } from './ocr-loader.js';
+
 const DEFAULT_FONTS = [
   'Arial',
   'Helvetica',
@@ -202,8 +204,8 @@ export function maskDetectedText(imageData, words) {
 }
 
 export async function recognizeText(source, { language = 'eng', minConfidence = 55, onProgress = () => {} } = {}) {
-  const Tesseract = globalThis.Tesseract;
-  if (!Tesseract?.recognize) throw new Error('Tesseract.js is unavailable. Check the network connection or disable text detection.');
+  onProgress(0, 'Loading experimental text detection');
+  const Tesseract = await loadTesseract();
   const result = await Tesseract.recognize(source, language, {
     logger: message => onProgress(clamp(Number(message?.progress ?? 0), 0, 1), String(message?.status || 'Recognizing text'))
   });

@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="description" content="ClusterGlyph converts PNG and raster images into compact, editable SVG using OCR text recovery, perceptual color clustering, connected-object tracing, polygon simplification, and circle/ellipse recovery — in your browser." />
+  <meta name="description" content="Turn raster images into editable SVG locally in your browser, with color clustering, shape recovery, and optional experimental text detection." />
   <meta name="theme-color" content="#0b0d10" />
-  <meta property="og:title" content="ClusterGlyph — Text-aware raster to SVG" />
-  <meta property="og:description" content="Turn raster images into clean, editable SVG geometry and native text objects locally in your browser." />
+  <meta property="og:title" content="ClusterGlyph — Raster to editable SVG" />
+  <meta property="og:description" content="Trace images into editable vector shapes in your browser. Experimental text detection is available when you need it." />
   <meta property="og:type" content="website" />
-  <title>ClusterGlyph — Text-aware PNG to SVG</title>
+  <title>ClusterGlyph — Raster to editable SVG</title>
   <link rel="icon" href="./assets/logo.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
@@ -26,7 +26,7 @@
 
     <div class="badges" aria-label="Project highlights">
       <span>Image stays local</span>
-      <span>Tesseract OCR</span>
+      <span>No account needed</span>
     </div>
 
     <a class="github" href="https://github.com/vtavakkoli/ClusterGlyph" target="_blank" rel="noreferrer">
@@ -38,11 +38,11 @@
     <section class="hero" aria-labelledby="hero-title">
       <div class="hero-copy">
         <p class="eyebrow">LOCAL RASTER → EDITABLE SVG</p>
-        <h1 id="hero-title">Turn pixels into <em>shapes and real text.</em></h1>
+        <h1 id="hero-title">Turn pixels into <em>editable shapes.</em></h1>
         <p class="lead">
-          Detect text with Tesseract.js and preserve it as native SVG <code>&lt;text&gt;</code>, while graphics are processed with
-          color clustering, connected-region tracing, polygon simplification, and circle/ellipse recovery.
-          Your raster image stays in the browser.
+          Trace logos, diagrams, and illustrations into SVG. Refine the colors, edit individual objects,
+          and export your result. Everything is processed in your browser.
+          Need editable text? Try the optional experimental text detection.
         </p>
 
         <div class="hero-actions">
@@ -52,25 +52,25 @@
 
         <div class="hero-facts" aria-label="Technical highlights">
           <span><strong>1–32</strong> color clusters</span>
-          <span><strong>OCR text</strong> stays editable</span>
+          <span><strong>Editable</strong> vector objects</span>
           <span><strong>No image upload</strong> required</span>
         </div>
       </div>
 
       <div class="hero-flow">
         <p class="pipeline-label">Vectorization pipeline</p>
-        <div class="pipeline" aria-label="PNG to OCR and color clusters to contours to text and geometry to SVG">
+        <div class="pipeline" aria-label="Raster image to color clusters to contours to editable shapes to SVG">
           <span>PNG</span>
           <b aria-hidden="true">→</b>
-          <span>OCR + clusters</span>
+          <span>Clusters</span>
           <b aria-hidden="true">→</b>
           <span>Contours</span>
           <b aria-hidden="true">→</b>
-          <span>Text + geometry</span>
+          <span>Shapes</span>
           <b aria-hidden="true">→</b>
           <span>SVG</span>
         </div>
-        <p class="pipeline-note">Text becomes editable SVG text; graphics become editable vector geometry.</p>
+        <p class="pipeline-note">Geometry tracing is the default. Experimental text recovery runs only when you enable it.</p>
       </div>
     </section>
 
@@ -81,7 +81,7 @@
             <p class="section-kicker">Step 1</p>
             <h2>Input</h2>
           </div>
-          <span id="status">Choose an image</span>
+          <span id="status" role="status" aria-live="polite">Choose an image</span>
         </div>
 
         <div id="drop" class="dropzone">
@@ -101,7 +101,7 @@
           <span>Fine tune</span>
         </div>
 
-        <label class="control-row">
+        <label class="control-row" for="clusters">
           <span><b>Color clusters</b><small>Exact target count for perceptual Lab k-means</small></span>
           <output id="clustersValue"></output>
         </label>
@@ -110,25 +110,25 @@
           <input id="clustersNumber" type="number" min="1" max="32" value="8" aria-label="Number of color clusters" />
         </div>
 
-        <label class="control-row">
-          <span><b>Processing resolution</b><small>Long-edge raster used for OCR and tracing</small></span>
+        <label class="control-row" for="maxDim">
+          <span><b>Processing resolution</b><small>Long edge used for tracing; higher keeps more detail</small></span>
           <output id="maxDimValue"></output>
         </label>
         <input id="maxDim" type="range" min="180" max="1000" step="20" value="600" />
 
-        <label class="control-row">
+        <label class="control-row" for="simplify">
           <span><b>Polygon simplification</b><small>Higher = fewer points</small></span>
           <output id="simplifyValue"></output>
         </label>
         <input id="simplify" type="range" min="0" max="6" step="0.1" value="1.5" />
 
-        <label class="control-row">
+        <label class="control-row" for="minArea">
           <span><b>Minimum region</b><small>Discard isolated raster noise</small></span>
           <output id="minAreaValue"></output>
         </label>
         <input id="minArea" type="range" min="1" max="300" value="8" />
 
-        <label class="control-row">
+        <label class="control-row" for="shapeTolerance">
           <span><b>Round-shape tolerance</b><small>Circle / ellipse fit threshold</small></span>
           <output id="shapeToleranceValue"></output>
         </label>
@@ -146,20 +146,23 @@
           </label>
         </div>
 
-        <div class="inline-settings">
-          <label class="check"><input id="detectText" type="checkbox" checked /><span>Detect editable text</span></label>
-          <label>OCR language
-            <select id="ocrLanguage">
+        <fieldset class="experimental-settings" aria-describedby="ocrHelp">
+          <legend>Optional text recovery <span class="experimental-badge">Experimental</span></legend>
+          <label class="check"><input id="detectText" type="checkbox" aria-describedby="ocrHelp" /><span>Enable text detection</span></label>
+          <p id="ocrHelp">Off by default. Word recognition and font matching may be inaccurate. Review the result before exporting. When off, lettering is traced as shapes.</p>
+          <label class="ocr-language" for="ocrLanguage">Text language
+            <select id="ocrLanguage" disabled>
               <option value="eng" selected>English</option>
               <option value="deu">German</option>
               <option value="eng+deu">English + German</option>
             </select>
           </label>
-        </div>
+          <p id="ocrMode" class="mode-note" role="status">Geometry only · no text recognition downloads</p>
+        </fieldset>
 
         <button id="runBtn" class="primary" disabled>Vectorize image</button>
         <div class="progress-wrap">
-          <progress id="progress" max="100" value="0"></progress>
+          <progress id="progress" max="100" value="0" aria-label="Vectorization progress"></progress>
           <span id="progressText">Ready</span>
         </div>
       </aside>
@@ -173,7 +176,13 @@
           <span>Original / vector</span>
         </div>
 
-        <div class="compare-stage">
+        <div class="preview-modes" role="group" aria-label="Preview view">
+          <button type="button" class="secondary" data-view="original" aria-pressed="true" disabled>Original</button>
+          <button type="button" class="secondary" data-view="compare" aria-pressed="false" disabled>Compare</button>
+          <button type="button" class="secondary" data-view="vector" aria-pressed="false" disabled>SVG · edit</button>
+        </div>
+
+        <div class="compare-stage" data-view="original">
           <div class="canvas-wrap source"><canvas id="sourceCanvas"></canvas></div>
           <div class="canvas-wrap vector"><div id="svgPreview"></div></div>
           <div class="divider"></div>
@@ -182,7 +191,7 @@
 
         <label class="compare-slider">
           <span>Original</span>
-          <input id="compare" type="range" min="0" max="100" value="50" />
+          <input id="compare" type="range" min="0" max="100" value="50" aria-label="Original and SVG comparison position" disabled />
           <span>SVG</span>
         </label>
 
@@ -203,7 +212,7 @@
           </div>
 
           <div class="editor-toolbar">
-            <select id="objectSelect" aria-label="Select vector object">
+            <select id="objectSelect" aria-label="Select vector object" disabled>
               <option value="">No objects yet</option>
             </select>
             <button id="resetEditsBtn" class="secondary" disabled>Reset edits</button>
@@ -219,7 +228,7 @@
               <div><dt>Points / size</dt><dd id="objectPoints"></dd></div>
             </dl>
             <label class="fill-control"><span>Fill color</span><input id="objectFill" type="color" value="#000000" /></label>
-            <p class="editor-help">Polygon objects expose draggable vertex handles. OCR regions export as native SVG <code>&lt;text&gt;</code> elements with estimated font family, size, weight, color, and position.</p>
+            <p class="editor-help">Use the SVG view to edit the whole image. Drag polygon handles to reshape an object, or change its fill color. Experimental text recovery, when enabled, adds editable SVG text with estimated fonts.</p>
             <button id="deleteObjectBtn" class="danger" type="button">Delete selected object</button>
           </div>
         </div>
@@ -240,15 +249,15 @@
     <section id="workflow" class="workflow-section" aria-labelledby="workflow-title">
       <div class="workflow-heading">
         <p class="eyebrow">HOW IT WORKS</p>
-        <h2 id="workflow-title">A text-aware, geometry-first vectorization pipeline.</h2>
-        <p>ClusterGlyph keeps OCR, color segmentation, connected-object extraction, contour optimization, and editable SVG serialization explicit and inspectable.</p>
+        <h2 id="workflow-title">From raster image to editable vector.</h2>
+        <p>Start with geometry tracing. Enable experimental text recovery only when you want to try replacing traced letters with editable text.</p>
       </div>
 
       <div class="explain">
         <article>
           <span>01</span>
-          <h3>Recover text</h3>
-          <p>Tesseract.js detects words in-browser. ClusterGlyph estimates their color, common font family, weight, size, and original placement.</p>
+          <h3>Choose your image</h3>
+          <p>Drop a logo, diagram, or illustration. Choose a color count and processing resolution to balance detail and SVG size.</p>
         </article>
         <article>
           <span>02</span>
@@ -263,7 +272,7 @@
         <article>
           <span>04</span>
           <h3>Export semantic SVG</h3>
-          <p>Round contours become <code>&lt;circle&gt;</code>/<code>&lt;ellipse&gt;</code>; detected words become native <code>&lt;text&gt;</code> instead of traced letter polygons.</p>
+          <p>Edit shapes and export SVG. Optional experimental OCR can recover native <code>&lt;text&gt;</code>; wording, fonts, and placement need review.</p>
         </article>
       </div>
     </section>
@@ -272,7 +281,7 @@
   <footer>
     <div>
       <strong>ClusterGlyph</strong>
-      <span>Text-aware raster vectorization.</span>
+      <span>Local raster-to-SVG vectorization.</span>
     </div>
     <div class="footer-links">
       <a href="#workspace">Vectorizer</a>
@@ -281,7 +290,6 @@
     </div>
   </footer>
 
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
   <script type="module" src="./src/app.js"></script>
 </body>
 </html>

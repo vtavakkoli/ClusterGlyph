@@ -3,12 +3,12 @@
 
 # ClusterGlyph
 
-**Text-aware, geometry-aware raster-to-SVG vectorization in your browser.**
+**Local raster-to-SVG vectorization with editable shapes and optional experimental text recovery.**
 
 [![Live Demo](https://img.shields.io/badge/live-GitHub%20Pages-b8ff5a?style=flat-square&labelColor=111318)](https://vtavakkoli.github.io/ClusterGlyph/)
 [![Tests](https://img.shields.io/github/actions/workflow/status/vtavakkoli/ClusterGlyph/test.yml?branch=main&style=flat-square&label=tests)](https://github.com/vtavakkoli/ClusterGlyph/actions/workflows/test.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-66e7ff?style=flat-square&labelColor=111318)](LICENSE)
-![OCR](https://img.shields.io/badge/OCR-Tesseract.js-929cab?style=flat-square&labelColor=111318)
+![OCR](https://img.shields.io/badge/OCR-experimental%20%C2%B7%20opt--in-ffd296?style=flat-square&labelColor=111318)
 
 [**Open the vectorizer**](https://vtavakkoli.github.io/ClusterGlyph/) · [Report a bug](https://github.com/vtavakkoli/ClusterGlyph/issues) · [Request a feature](https://github.com/vtavakkoli/ClusterGlyph/issues)
 
@@ -16,22 +16,24 @@
 
 ---
 
-ClusterGlyph converts PNG, JPG, WebP, and other browser-readable raster images into compact, editable SVG. It now separates **text recovery** from **graphic tracing**: Tesseract.js detects words and exports them as native SVG `<text>` objects, while non-text graphics are segmented in perceptual color space and converted into editable polygons, circles, and ellipses.
+ClusterGlyph converts PNG, JPG, WebP, and other browser-readable raster images into editable SVG. By default, the entire image, including lettering, is segmented in perceptual color space and traced into editable polygons, circles, and ellipses.
 
-> **Privacy by design:** raster pixels are processed in the browser and are not uploaded to a ClusterGlyph backend. Tesseract.js and language assets are loaded by the browser from their configured CDN sources.
+**Text detection is experimental and off by default.** Enable **Optional text recovery → Enable text detection** before vectorizing to try recovering words as native SVG `<text>` objects. Recognition, fonts, and placement are estimates and should be reviewed before exporting. The language selector is available only while text detection is enabled.
+
+> **Privacy by design:** raster pixels are processed in the browser and are not uploaded to a ClusterGlyph backend. The default geometry workflow makes no OCR downloads. Tesseract.js and language assets are requested from their configured CDN sources only when you run vectorization with experimental text detection enabled.
 
 ## What makes it different
 
 | Capability | ClusterGlyph approach |
 |---|---|
-| Text preservation | Tesseract.js OCR detects words and exports editable native SVG `<text>` instead of tracing letters as polygons |
-| Text styling | Estimates text color, common font family, weight, size, and original position from the raster region |
+| Experimental text recovery | Optional Tesseract.js OCR exports detected words as native SVG `<text>`; disabled by default |
+| Experimental text styling | Estimates text color, common font family, weight, size, and position; review accuracy before export |
 | Color reduction | Exact **1–32** cluster target using deterministic CIE Lab k-means |
 | Object separation | Each **spatially connected component** becomes an independent SVG object |
 | Editable output | Stable IDs such as `object-001` and `text-001` |
 | Geometry cleanup | Collinear cleanup + Ramer–Douglas–Peucker simplification |
 | Primitive recovery | Round regions can become native `<circle>` or `<ellipse>` |
-| In-browser editing | Select, recolor, delete, and drag polygon vertices before export |
+| In-browser editing | Original, Compare, and full SVG views; select, recolor, delete, and drag polygon vertices before export |
 | Privacy | Raster image processing stays client-side |
 | Deployment | Static GitHub Pages application; no backend or API key required |
 
@@ -39,19 +41,22 @@ ClusterGlyph converts PNG, JPG, WebP, and other browser-readable raster images i
 
 ```text
 PNG / raster
-    → Tesseract.js OCR ────────────────→ editable <text>
     → perceptual color clusters
     → connected components
     → contour tracing
     → point simplification
     → circle / ellipse recovery
     → editable vector geometry
-    → combined semantic SVG
+    → SVG export
+
+Optional, experimental branch (only when enabled):
+    raster → Tesseract.js → text masking + editable <text>
+    masked raster → geometry tracing → combined SVG
 ```
 
 The web UI shows the same process in one horizontal flow:
 
-**PNG → OCR + clusters → Contours → Text + geometry → SVG**
+**PNG → Clusters → Contours → Shapes → SVG**
 
 ## Live demo
 
@@ -79,18 +84,26 @@ Photographs can also be vectorized, but high cluster counts and fine tracing set
 | Setting | Purpose |
 |---|---|
 | **Color clusters** | Exact target number, from 1 to 32, of perceptual Lab-space color groups |
-| **Processing resolution** | Long-edge raster resolution used for OCR and tracing |
+| **Processing resolution** | Long-edge raster resolution used for tracing and, when enabled, OCR |
 | **Polygon simplification** | RDP epsilon; higher values reduce more vertices |
 | **Minimum region** | Filters isolated raster noise and tiny components |
 | **Round-shape tolerance** | Controls circle/ellipse fitting strictness |
 | **Detect circles & ellipses** | Enables native SVG primitive recovery |
-| **Detect editable text** | Runs Tesseract.js and restores detected words as SVG `<text>` elements |
-| **OCR language** | English, German, or English + German in the current UI |
+| **Enable text detection — Experimental** | Off by default; runs Tesseract.js on demand and restores detected words as SVG `<text>` elements |
+| **Text language** | English, German, or English + German; disabled until text detection is enabled |
 | **Precision** | Decimal precision used in exported coordinates |
 
-## Text recovery
+## Preview and editing
 
-ClusterGlyph performs OCR before graphic tracing. Confident words are analyzed to recover:
+Use **Original** to inspect the input, **Compare** to move the raster/SVG divider, or **SVG · edit** to see and edit the entire vector image. Both layers fit the same preview area, including when the source raster is small or downscaled.
+
+Select objects in the preview or object selector. Click a palette swatch to select the first remaining object in that color cluster. Recolor, delete, or drag polygon vertices; **Reset edits** restores the conversion result. Object and text totals and SVG size update after edits.
+
+Conversion locks the input and settings until it finishes so files and results cannot overlap. Image-decoding and worker errors restore the controls for retry. If experimental OCR cannot run, tracing continues on the unmasked raster and the completion message explicitly reports geometry-only output.
+
+## Experimental text recovery
+
+When explicitly enabled, ClusterGlyph performs OCR before graphic tracing. Confident words are analyzed to recover:
 
 - text content
 - bounding-box position
@@ -110,7 +123,7 @@ A raster image does not reliably contain enough information to recover an exact 
 ```text
 Raster image
    │
-   ├──────────────► Tesseract.js OCR
+   ├─ opt-in only ► Tesseract.js OCR (experimental)
    │                    │
    │                    ├── confidence filtering
    │                    ├── foreground/background color estimate
@@ -120,7 +133,7 @@ Raster image
    ▼
 Downscaled processing canvas
    │
-   ├── detected text pixels selectively masked
+   ├── detected text pixels selectively masked (only with successful OCR)
    │
    ▼
 CIE Lab color clustering
@@ -159,11 +172,15 @@ Boundary edge graph → closed contours
 ├── src/
 │   ├── app.js
 │   ├── ocr.js
+│   ├── ocr-loader.js
 │   ├── serializer.js
 │   ├── worker.js
 │   └── vectorizer.js
 ├── tests/
+│   ├── browser/
+│   │   └── smoke.mjs
 │   ├── text-ocr.test.js
+│   ├── ocr-loader.test.js
 │   └── vectorizer.test.js
 ├── .github/
 │   ├── workflows/
@@ -178,9 +195,9 @@ Boundary edge graph → closed contours
 
 ## Algorithm
 
-### 1. OCR and text reconstruction
+### 1. Optional experimental OCR and text reconstruction
 
-Tesseract.js recognizes words on the same downscaled canvas used for tracing. Low-confidence words are filtered. ClusterGlyph samples each word region to estimate foreground and background colors, estimates stroke density for font weight, and measures candidate browser fonts to choose a close family and size. Coordinates are then scaled back to the original raster dimensions.
+When text detection is enabled, Tesseract.js recognizes words on the same downscaled canvas used for tracing. Low-confidence words are filtered. ClusterGlyph samples each word region to estimate foreground and background colors, estimates stroke density for font weight, and measures candidate browser fonts to choose a close family and size. Coordinates are then scaled back to the original raster dimensions. With text detection off, both OCR and text masking are skipped.
 
 ### 2. Text-aware raster masking
 
@@ -226,7 +243,7 @@ Open:
 http://localhost:8080
 ```
 
-There is no frontend build step. The application loads the pinned Tesseract.js browser bundle from jsDelivr when OCR is enabled; Tesseract language data may also be downloaded by the browser on first use.
+There is no frontend build step. The application loads the pinned Tesseract.js browser bundle from jsDelivr only when you run vectorization with experimental OCR enabled; Tesseract language data may also be downloaded by the browser on first use. Enabling the checkbox alone does not download anything. Failed bundle downloads can be retried on a later run.
 
 ## Tests
 
@@ -245,8 +262,17 @@ The test suite covers core geometry and text-aware export behavior, including:
 - positioned text-object generation
 - native SVG `<text>` serialization and XML escaping
 - text-mask dimension preservation
+- lazy OCR loading, shared downloads, download errors, retries, and timeout recovery
 
-Tests also run automatically on pull requests and pushes to `main`.
+Tests also run automatically on pull requests and pushes to `main`. Browser checks cover opt-in behavior, geometry export, OCR success/fallback with a deterministic recognition stub, editor interactions, input/worker errors, and responsive widths from 320px to 1440px. They verify integration behavior rather than OCR recognition accuracy. Desktop and mobile screenshots are saved as workflow artifacts.
+
+To run the optional browser checks locally (Playwright is a test tool, not an application dependency):
+
+```bash
+npm install --no-save --package-lock=false playwright@1.62.1
+npx playwright install chromium
+npm run test:browser
+```
 
 ## GitHub Pages deployment
 

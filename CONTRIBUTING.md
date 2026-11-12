@@ -4,7 +4,7 @@ Thanks for helping improve ClusterGlyph.
 
 ## Development setup
 
-ClusterGlyph is a static browser application with zero runtime dependencies.
+ClusterGlyph is a static browser application with no build step. Geometry tracing is dependency-free; optional experimental text detection downloads Tesseract.js and language assets on demand.
 
 ```bash
 git clone https://github.com/vtavakkoli/ClusterGlyph.git
@@ -30,6 +30,7 @@ Please make sure that:
 4. UI changes work at desktop, tablet, and mobile widths.
 5. The raster-to-SVG pipeline remains fully client-side unless a proposal explicitly discusses a different architecture.
 6. New behavior is documented in the README when appropriate.
+7. Text detection remains off by default, and geometry-only runs do not download OCR assets.
 
 ## Code style
 

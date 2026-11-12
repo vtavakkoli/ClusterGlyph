@@ -2,7 +2,7 @@
   "name": "clusterglyph",
   "version": "0.4.0",
   "private": true,
-  "description": "Text-aware raster-to-SVG vectorizer using Tesseract.js OCR, Lab color clustering, connected-object tracing, polygon simplification, and circle/ellipse recovery.",
+  "description": "Local raster-to-SVG vectorizer with Lab color clustering, editable geometry, and optional experimental Tesseract.js text recovery.",
   "homepage": "https://vtavakkoli.github.io/ClusterGlyph/",
   "repository": {
     "type": "git",
@@ -14,6 +14,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.js",
+    "test:browser": "node tests/browser/smoke.mjs",
     "serve": "python3 -m http.server 8080"
   },
   "keywords": [

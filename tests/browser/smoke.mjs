@@ -95,13 +95,18 @@ try {
         if (rgba[i] === 18 && rgba[i + 1] === 52 && rgba[i + 2] === 86 && rgba[i + 3] === 255) recolored++;
         if (!rgba[i + 3]) transparent++;
       }
-      return { width: canvas.width, height: canvas.height, corner: [...rgba.subarray(0, 4)], recolored, transparent };
+      const samples = [0.125, 0.375, 0.625, 0.875].map(fraction => {
+        const i = (Math.floor(canvas.height / 2) * canvas.width + Math.floor(canvas.width * fraction)) * 4;
+        return [...rgba.subarray(i, i + 4)];
+      });
+      return { width: canvas.width, height: canvas.height, corner: [...rgba.subarray(0, 4)], samples, recolored, transparent };
     }, data.toString('base64'));
     await page.waitForFunction(() => !document.querySelector('#downloadPngBtn').disabled);
     return pixels;
   }
   try {
     await page.goto(baseUrl);
+    assert.equal(await page.isChecked('#preserveBlackWhite'), true);
     assert.equal(await page.isChecked('#detectText'), false);
     assert.equal(await page.isDisabled('#ocrLanguage'), true);
     assert.equal(await page.inputValue('#backgroundMode'), 'transparent');
@@ -248,6 +253,37 @@ try {
     await done();
     assert.match(await page.textContent('#status'), /review experimental text recovery/);
     console.log('PASS: failed OCR downloads fall back to geometry, then retry successfully');
+
+    await page.uncheck('#detectText');
+    await page.selectOption('#backgroundMode', 'original');
+    await page.fill('#clustersNumber', '4');
+    const colorFixture = await page.evaluate(() => {
+      const c = document.createElement('canvas'); c.width = 80; c.height = 20;
+      const ctx = c.getContext('2d');
+      ['#fcfcfd', '#070707', '#818181', '#0066ff'].forEach((color, i) => {
+        ctx.fillStyle = color; ctx.fillRect(i * 20, 0, 20, 20);
+      });
+      return c.toDataURL().split(',')[1];
+    });
+    const cdp = await page.context().newCDPSession(page);
+    for (const mode of ['light', 'dark', 'auto-dark']) {
+      await page.emulateMedia({ colorScheme: mode === 'light' ? 'light' : 'dark' });
+      await cdp.send('Emulation.setAutoDarkModeOverride', { enabled: mode === 'auto-dark' });
+      await page.setInputFiles('#file', { name: 'color-check.png', mimeType: 'image/png', buffer: Buffer.from(colorFixture, 'base64') });
+      await ready();
+      await page.click('#runBtn');
+      await done();
+      const colors = await page.locator('.swatch').evaluateAll(swatches => swatches.map(s => s.title.match(/#[a-f0-9]{6}/i)[0]));
+      assert.deepEqual(new Set(colors), new Set(['#ffffff', '#000000', '#818181', '#0066ff']));
+      const png = await pngExport();
+      assert.deepEqual(png.corner, [255, 255, 255, 255]);
+      assert.deepEqual(png.samples, [[255, 255, 255, 255], [0, 0, 0, 255], [129, 129, 129, 255], [0, 102, 255, 255]]);
+      assert.equal(png.transparent, 0);
+      assert.deepEqual(new Set((await page.locator('#svgPreview svg').evaluate(svg => getComputedStyle(svg).colorScheme)).split(/\s+/)), new Set(['light', 'only']));
+    }
+    await cdp.send('Emulation.setAutoDarkModeOverride', { enabled: false });
+    await cdp.detach();
+    console.log('PASS: artwork colors and PNG pixels survive light, dark, and automatic dark mode');
     assert.deepEqual(errors, []);
     console.log('PASS: no unhandled browser errors');
   } catch (error) {
@@ -258,3 +294,4 @@ try {
   await browser?.close();
   await new Promise(resolve => server.close(resolve));
 }
+

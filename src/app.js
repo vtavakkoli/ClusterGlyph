@@ -219,6 +219,7 @@ function options() {
     shapeTolerance: Number($('#shapeTolerance').value),
     detectGeometry: $('#detectGeometry').checked,
     cleanEdges: $('#cleanEdges').checked,
+    preserveBlackWhite: $('#preserveBlackWhite').checked,
     closeGaps: $('#closeGaps').checked,
     smoothContours: $('#smoothContours').checked,
     precision: Number($('#precision').value),
@@ -558,3 +559,4 @@ $('#browseBtn').addEventListener('click', () => input.click());
 $('#compare').addEventListener('input', (e) => {
   document.documentElement.style.setProperty('--split', `${e.target.value}%`);
 });
+

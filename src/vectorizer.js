@@ -38,16 +38,30 @@ function samplePixels(data, maxSamples = 24000) {
   return samples;
 }
 
-export function clusterColors(data, k = 8, iterations = 10) {
+export function clusterColors(data, k = 8, iterations = 10, preserveBlackWhite = true) {
   const samples = samplePixels(data);
   if (!samples.length) return { centroids: [], labels: new Int16Array(data.length / 4).fill(-1), palette: [] };
   k = clamp(Math.round(k), 1, Math.min(32, samples.length));
+  // Weight representative colors by their frequency. Unweighted farthest-point
+  // seeds can spend the palette on rare antialiased fringes while merging a
+  // real color such as red into orange. Coarse RGB bins group compression noise;
+  // only seed selection uses them, not pixel classification or exported fills.
+  const bins = new Map();
+  for (const sample of samples) {
+    const [r, g, b] = sample.rgb;
+    const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
+    if (!bins.has(key)) bins.set(key, [0, 0, 0, 0]);
+    const bin = bins.get(key);
+    bin[0] += sample.lab[0]; bin[1] += sample.lab[1]; bin[2] += sample.lab[2]; bin[3]++;
+  }
+  const candidates = [...bins.values()].map(bin => ({ lab: bin.slice(0, 3).map(v => v / bin[3]), count: bin[3] }));
   const centroids = [samples[Math.floor(samples.length / 2)].lab.slice()];
   while (centroids.length < k) {
-    let best = samples[0], bestD = -1;
-    for (const s of samples) {
+    let best = candidates[0], bestD = -1;
+    for (const s of candidates) {
       let d = Infinity;
       for (const c of centroids) d = Math.min(d, dist3(s.lab, c));
+      d *= s.count;
       if (d > bestD) { bestD = d; best = s; }
     }
     centroids.push(best.lab.slice());
@@ -86,11 +100,16 @@ export function clusterColors(data, k = 8, iterations = 10) {
     const s = rgbSums[best];
     s[0] += data[p]; s[1] += data[p + 1]; s[2] += data[p + 2]; s[3] += data[p + 3]; s[4]++;
   }
-  const palette = rgbSums.map(s => s[4] ? ({
-    color: hex(s[0] / s[4], s[1] / s[4], s[2] / s[4]),
-    alpha: s[3] / s[4] / 255,
-    count: s[4]
-  }) : ({ color: '#000000', alpha: 0, count: 0 }));
+  const palette = rgbSums.map(s => {
+    if (!s[4]) return { color: '#000000', alpha: 0, count: 0 };
+    const rgb = s.slice(0, 3).map(v => v / s[4]);
+    const lo = Math.min(...rgb), hi = Math.max(...rgb);
+    // Compression and antialiased edges pull black/white cluster means inward.
+    // Only normalize almost-neutral endpoints; keep gray and tinted paper intact.
+    const color = preserveBlackWhite && hi - lo <= 8 && hi <= 16 ? '#000000'
+      : preserveBlackWhite && hi - lo <= 8 && lo >= 247 ? '#ffffff' : hex(...rgb);
+    return { color, alpha: s[3] / s[4] / 255, count: s[4] };
+  });
   return { centroids, labels, palette };
 }
 
@@ -416,7 +435,7 @@ export function vectorizeImage(imageData, options = {}, progress = () => {}) {
   const sx = originalWidth / width, sy = originalHeight / height;
 
   progress(0.05, `Clustering into ${clusters} colors`);
-  const clustered = clusterColors(data, clusters, options.clusterIterations ?? 9);
+  const clustered = clusterColors(data, clusters, options.clusterIterations ?? 9, options.preserveBlackWhite !== false);
   progress(0.3, 'Cleaning color regions');
   const cleaned = options.cleanEdges === false ? clustered.labels : cleanColorLabels(clustered.labels, width, height, clustered.palette);
   const merged = mergeSmallRegions(cleaned, width, height, clustered.palette, minArea);
@@ -498,3 +517,4 @@ export function vectorizeImage(imageData, options = {}, progress = () => {}) {
     }
   };
 }
+

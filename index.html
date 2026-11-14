@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
   <meta name="description" content="Turn raster images into editable SVG locally in your browser, with color clustering, shape recovery, and optional experimental text detection." />
   <meta name="theme-color" content="#0b0d10" />
   <meta property="og:title" content="ClusterGlyph — Raster to editable SVG" />
@@ -147,6 +148,8 @@
         </div>
 
         <div class="cleanup-settings">
+          <label class="check"><input id="preserveBlackWhite" type="checkbox" checked aria-describedby="blackWhiteHelp" /><span>Preserve black &amp; white</span></label>
+          <p id="blackWhiteHelp" class="muted">Keep near-black and near-white neutral colors pure. Turn off for subtle gray shading.</p>
           <label class="check"><input id="smoothContours" type="checkbox" checked /><span>Smooth traced edges</span></label>
           <label class="check"><input id="cleanEdges" type="checkbox" checked /><span>Clean color speckles</span></label>
           <label class="check"><input id="closeGaps" type="checkbox" checked /><span>Close tiny gaps between colors</span></label>
@@ -323,3 +326,4 @@
   <script type="module" src="./src/app.js"></script>
 </body>
 </html>
+

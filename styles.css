@@ -16,7 +16,7 @@
   --radius: 18px;
   --shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color-scheme: dark;
+  color-scheme: only dark;
 }
 
 * {
@@ -775,6 +775,8 @@ input[type="range"] {
 }
 
 .compare-stage {
+  color-scheme: only light;
+  forced-color-adjust: none;
   height: 530px;
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -878,6 +880,8 @@ input[type="range"] {
 }
 
 .palette {
+  color-scheme: only light;
+  forced-color-adjust: none;
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
@@ -1319,3 +1323,4 @@ footer strong {
     animation-iteration-count: 1 !important;
   }
 }
+

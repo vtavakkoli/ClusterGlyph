@@ -94,6 +94,7 @@ Photographs can also be vectorized, but high cluster counts and fine tracing set
 | **Minimum region** | Merges small connected regions into neighboring colors instead of deleting pixels; 1 retains every region |
 | **Smooth traced edges** | Rounds short raster steps and shallow curve segments with quadratic curves while retaining strong corners |
 | **Clean color speckles** | Removes isolated, low-contrast color labels while retaining contrasting thin lines |
+| **Preserve black & white** | On by default; normalizes almost-neutral colors close to black or white to pure endpoints. Turn off to retain subtle gray shading |
 | **Close tiny gaps between colors** | Adds small same-color overlaps to reduce antialiasing seams between neighboring regions |
 | **Output background** | Transparent, Original, or Custom color; applies immediately to both exports |
 | **PNG size** | 1×, 2×, or 4× original dimensions, independent of processing resolution |
@@ -110,6 +111,8 @@ Use **Original** to inspect the input, **Compare** to move the raster/SVG divide
 Select objects in the preview or object selector. Click a palette swatch to select the first remaining object in that color cluster. Recolor, delete, or drag polygon vertices; **Reset edits** restores the conversion result. Object and text totals and SVG size update after edits.
 
 **Download PNG** renders the current export SVG, so selection outlines, vertex handles, the checkerboard, and the original raster comparison are not included. PNG starts with transparency and uses the chosen output background. Exports above 32 megapixels or 16,384px on either edge are rejected with a request to use a smaller scale.
+
+Artwork in the preview and exported SVG opts out of automatic dark-mode and forced-color rewriting. PNG rendering uses an sRGB offscreen canvas when supported, with a DOM canvas fallback. Each PNG export checks white, black, blue, and red swatches through the same renderer. If a browser still changes these pixels, export stops with instructions to disable forced dark mode for web pages; SVG remains available. Some Samsung Internet settings can override a website's color-scheme declaration.
 
 Background removal detects the dominant edge color and removes only matching regions connected to the image border. It works for colored backgrounds as well as white. Enclosed white icons, lettering, and panels remain intact. This is a border-based estimate rather than semantic object segmentation; use **Original** for images whose foreground touches most of the border. Background changes do not require another conversion.
 
@@ -224,7 +227,9 @@ Before color clustering, likely glyph pixels inside detected OCR boxes are repla
 
 ### 3. Perceptual color clustering
 
-Sampled sRGB pixels are converted to CIE Lab. ClusterGlyph uses deterministic farthest-point initialization followed by k-means iterations. Centroids are learned from a capped sample for responsiveness, then all non-transparent pixels are classified.
+Sampled sRGB pixels are converted to CIE Lab. ClusterGlyph uses deterministic frequency-weighted farthest-point initialization followed by k-means iterations. RGB bins group small compression variations for seed selection, and each seed's distance is weighted by its bin's sample count. This gives real colored regions priority over rare edge artifacts, retaining distinct red and orange regions in limited-palette infographics. Centroids are learned from the original capped sample for responsiveness, then all non-transparent pixels are classified.
+
+Palette fills use the original sRGB channel means. With **Preserve black & white** enabled, an almost-neutral mean (channel spread at most 8) becomes pure black when every channel is at most 16, or pure white when every channel is at least 247. Mid-gray, colored fills, tinted light backgrounds, and source alpha remain unchanged. This does not repair an input whose black and white pixels were already converted to gray; use the original raster in that case.
 
 ### 4. Connected-object extraction
 
@@ -333,3 +338,4 @@ For security-related reports, please follow [SECURITY.md](SECURITY.md) rather th
 Released under the [MIT License](LICENSE).
 
 Copyright © 2026 Vahid Tavakkoli.
+

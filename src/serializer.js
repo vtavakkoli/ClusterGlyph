@@ -83,5 +83,8 @@ export function serializeObjectsToSvg(objects, width, height, precision = 2, { b
   const color = /^#[a-f\d]{6}$/i.test(backgroundColor) ? backgroundColor : '#18212a';
   const background = backgroundMode === 'custom'
     ? `  <rect id="canvas-background" width="${fmt(width, precision)}" height="${fmt(height, precision)}" fill="${color}"/>\n` : '';
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${fmt(width, precision)} ${fmt(height, precision)}" width="${fmt(width, precision)}" height="${fmt(height, precision)}">\n${background}${visible.map(object => `  ${objectMarkup(object, precision)}`).join('\n')}\n</svg>`;
+  // SVGs are artwork, including when loaded as an image for PNG export. They
+  // must not inherit a viewer's automatic dark theme or forced color palette.
+  return `<svg xmlns="http://www.w3.org/2000/svg" style="color-scheme:only light;forced-color-adjust:none" viewBox="0 0 ${fmt(width, precision)} ${fmt(height, precision)}" width="${fmt(width, precision)}" height="${fmt(height, precision)}">\n${background}${visible.map(object => `  ${objectMarkup(object, precision)}`).join('\n')}\n</svg>`;
 }
+

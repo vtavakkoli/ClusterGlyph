@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { vectorizeImage, simplifyClosedPolygon, cleanColorLabels } from '../src/vectorizer.js';
+import { vectorizeImage, clusterColors, simplifyClosedPolygon, cleanColorLabels } from '../src/vectorizer.js';
 import { objectsForBackground, serializeObjectsToSvg, pathForRings } from '../src/serializer.js';
 
 function image(width, height, pixel) {
@@ -12,6 +12,50 @@ const area = points => Math.abs(points.reduce((sum, [x, y], i) => {
   const [nx, ny] = points[(i + 1) % points.length];
   return sum + x * ny - nx * y;
 }, 0) / 2);
+
+test('keeps compressed near-white and near-black artwork pure without changing gray or color', () => {
+  const colors = [[252, 252, 253, 255], [7, 7, 7, 255], [178, 178, 178, 255], [129, 129, 129, 255], [5, 155, 10, 255]];
+  const raster = image(40, 8, x => colors[Math.floor(x / 8)]);
+  const result = vectorizeImage(raster, { clusters: 5, minArea: 1 });
+  assert.deepEqual(new Set(result.palette.map(p => p.color)), new Set(['#ffffff', '#000000', '#b2b2b2', '#818181', '#059b0a']));
+  assert.ok(result.objects.some(o => o.fill === '#ffffff' && o.isBackground));
+  assert.ok(result.objects.some(o => o.fill === '#000000'));
+  assert.match(result.svg, /style="color-scheme:only light;forced-color-adjust:none"/);
+});
+
+test('endpoint preservation can be disabled for intentional off-white or dark gray shading', () => {
+  const raster = image(16, 8, x => x < 8 ? [252, 252, 253, 255] : [7, 7, 7, 255]);
+  const result = vectorizeImage(raster, { clusters: 2, minArea: 1, preserveBlackWhite: false });
+  assert.deepEqual(new Set(result.palette.map(p => p.color)), new Set(['#fcfcfd', '#070707']));
+});
+
+test('endpoint preservation retains tinted light colors and source alpha', () => {
+  const raster = image(24, 8, x => x < 8 ? [255, 247, 230, 255] : x < 16 ? [255, 255, 255, 128] : [0, 0, 0, 64]);
+  const { palette } = clusterColors(raster.data, 3);
+  assert.equal(palette.find(p => p.color === '#fff7e6').alpha, 1);
+  assert.equal(palette.find(p => p.color === '#ffffff').alpha, 128 / 255);
+  assert.equal(palette.find(p => p.color === '#000000').alpha, 64 / 255);
+});
+
+test('an eight-color infographic keeps red distinct from orange despite rare edge colors', () => {
+  const fills = [
+    [[255, 255, 255], 10000], [[0, 0, 0], 3000], [[134, 8, 197], 1000],
+    [[255, 112, 0], 1000], [[0, 155, 0], 1000], [[255, 220, 0], 700],
+    [[0, 102, 255], 1200], [[255, 0, 0], 200],
+    [[125, 60, 0], 20], [[128, 128, 128], 20], [[100, 130, 255], 20], [[255, 180, 100], 20]
+  ];
+  const data = new Uint8ClampedArray(fills.reduce((n, [, count]) => n + count, 0) * 4);
+  let offset = 0;
+  for (const [rgb, count] of fills) for (let i = 0; i < count; i++, offset += 4) data.set([...rgb, 255], offset);
+  const result = clusterColors(data, 8, 9);
+  assert.equal(result.palette.filter(p => p.count).length, 8);
+  assert.ok(result.palette.some(p => p.color === '#ff0000'), 'retain the red question mark instead of an extra brown fringe color');
+  assert.ok(result.palette.some(p => {
+    const [r, g, b] = p.color.match(/[a-f\d]{2}/gi).map(v => parseInt(v, 16));
+    return r > 240 && g > 90 && g < 130 && b < 20;
+  }), 'retain a separate orange region');
+  assert.deepEqual(clusterColors(data, 8, 9).palette, result.palette, 'palette initialization stays deterministic');
+});
 
 test('smooths shallow contour turns while preserving sharp rectangle corners', () => {
   const curve = [[0, 0], [5, 0], [8, 1], [10, 4], [10, 10], [0, 10]];
@@ -89,3 +133,4 @@ test('palette entries retain the cluster IDs used by objects after noise merging
   const result = vectorizeImage(raster, { clusters: 3, minArea: 2, cleanEdges: false });
   for (const object of result.objects) assert.equal(result.palette.find(p => p.cluster === object.cluster)?.color, object.fill);
 });
+
